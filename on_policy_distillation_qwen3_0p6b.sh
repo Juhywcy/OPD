@@ -1,34 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=opd_qwen3_0p6b
-#SBATCH --output=logs/20251004/output_%j.log
-#SBATCH --error=logs/20251004/error_%j.log
-#SBATCH --account=test
-#SBATCH --partition=TEST1
-#SBATCH --exclude=g[81-82]
-#SBATCH --gres=gpu:8
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=64
-#SBATCH --mem=500G
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
 
 set -x
 
-# Configure logging when running outside SBATCH.
-if [ -z "$SLURM_JOB_ID" ]; then
-    # Create the log directory and file for local runs.
-    LOG_DIR=${LOG_DIR:-logs}
-    mkdir -p "$LOG_DIR"
-    LOG_FILE="${LOG_DIR}/run_$(date +%Y%m%d_%H%M%S).log"
-    # Mirror output to both terminal and log file.
-    exec > >(tee -a "$LOG_FILE") 2>&1
-    echo "=========================================="
-    echo "Log file: $LOG_FILE"
-    echo "Start time: $(date)"
-    echo "=========================================="
-fi
-
-ray stop --force
 export RAY_memory_usage_threshold=0.99
 export CUDA_LAUNCH_BLOCKING=1
 # export CUDA_VISIBLE_DEVICES=1,2,3,4
@@ -165,8 +138,6 @@ PPO_MAX_TOKEN_LEN_PER_GPU=$(( ((1024 + MAX_RESP_LENGTH) > 32768) ? (1024 + MAX_R
 echo "PPO_MAX_TOKEN_LEN_PER_GPU: $PPO_MAX_TOKEN_LEN_PER_GPU"
 
 
-ray start --head
-sleep 5
 
 
 python3 -m verl.verl.trainer.main_ppo \
