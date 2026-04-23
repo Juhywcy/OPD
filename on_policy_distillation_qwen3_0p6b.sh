@@ -169,7 +169,7 @@ ray start --head
 sleep 5
 
 
-python3 -m verl.trainer.main_ppo \
+python3 -m verl.verl.trainer.main_ppo \
     algorithm.adv_estimator=$ADV_ESTIMATOR \
     algorithm.grpo_outcome_weight=$GRPO_OUTCOME_WEIGHT \
     data.shuffle=False \
