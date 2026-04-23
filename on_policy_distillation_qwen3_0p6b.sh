@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -x
-
+export TORCH_CUDA_ARCH_LIST="8.0"
 export RAY_memory_usage_threshold=0.99
 export CUDA_LAUNCH_BLOCKING=1
 # export CUDA_VISIBLE_DEVICES=1,2,3,4
