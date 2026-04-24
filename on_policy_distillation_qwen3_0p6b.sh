@@ -38,7 +38,7 @@ export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "t
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
 export ENABLE_FORMAT_REWARD=${ENABLE_FORMAT_REWARD:-False} # TODO: True / False (default False)
-export MODEL_DTYPE=${MODEL_DTYPE:-bfloat16} # actor/ref/critic fsdp_config.model_dtype: fp32 or bfloat16
+export MODEL_DTYPE=${MODEL_DTYPE:-fp32} # actor/ref/critic fsdp_config.model_dtype: fp32 or bfloat16
 export IS_PLOT=${IS_PLOT:-True} # TODO: True / False (default False)
 export LOSS_AGG_MODE=${LOSS_AGG_MODE:-"token-mean"} # TODO: "token-mean" / "seq-mean-token-sum" / "seq-mean-token-mean" / "seq-mean-token-sum-norm" (default "token-mean")
 
@@ -106,7 +106,7 @@ export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
 export PARALLEL_SIZE=1
-export RUN_NAME=${RUN_NAME:-${ADV_ESTIMATOR}_${TRAIN_DATASET_NAME}_${ACTOR_MODEL_NAME}_${REWARD_MODEL_NAME}_${MAX_RESP_LENGTH}-T_${TEMPERATURE}-Tch_${TEACHER_TEMPERATURE}-n_${N_RESPONSES}-mbs_${MINI_BATCH_SIZE}-topk_${LOG_PROB_TOP_K}-topk_strategy_${TOP_K_STRATEGY}-rw_${REWARD_WEIGHT_MODE}}
+export RUN_NAME=${RUN_NAME:-${ADV_ESTIMATOR}_${TRAIN_DATASET_NAME}_${ACTOR_MODEL_NAME}_${REWARD_MODEL_NAME}_${MAX_RESP_LENGTH}-T_${TEMPERATURE}-Tch_${TEACHER_TEMPERATURE}-n_${N_RESPONSES}-mbs_${MINI_BATCH_SIZE}-topk_${LOG_PROB_TOP_K}-topk_strategy_${TOP_K_STRATEGY}-rw_${REWARD_WEIGHT_MODE}-dtype_${MODEL_DTYPE}}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
 export OUTLINES_CACHE_DIR=~/.cache/outlines/$(uuidgen)
 export NCCL_DEBUG=WARN
@@ -162,7 +162,7 @@ python3 -m verl.trainer.main_ppo \
     $LR_ARGS \
     actor_rollout_ref.actor.ppo_mini_batch_size=$MINI_BATCH_SIZE \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=$PPO_MAX_TOKEN_LEN_PER_GPU \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size=$PARALLEL_SIZE \
     $KL_ARGS \
