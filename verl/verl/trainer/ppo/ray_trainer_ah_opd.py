@@ -257,6 +257,8 @@ def compute_advantage(
             adv_kwargs["overlap_mask"] = data.batch["overlap_mask"]
         if "teacher_entropy" in data.batch:  # optional OPD diagnostic for AH-OPD
             adv_kwargs["teacher_entropy"] = data.batch["teacher_entropy"]
+        if "student_entropy" in data.batch:  # optional OPD diagnostic for AH-OPD
+            adv_kwargs["student_entropy"] = data.batch["student_entropy"]
 
         # calculate advantage estimator
         res = adv_estimator_fn(**adv_kwargs)
@@ -1291,6 +1293,7 @@ class RayPPOTrainer:
 
                         if entropys is not None:
                             response_masks = batch.batch["response_mask"]
+                            batch.batch["student_entropy"] = entropys.detach()
                             if "format_mask" in batch.batch.keys():
                                 response_masks = response_masks * batch.batch["format_mask"].unsqueeze(-1)
                             
@@ -1394,13 +1397,27 @@ class RayPPOTrainer:
                         if "ahopd_horizon" in batch.batch.keys():
                             response_mask = batch.batch["response_mask"]
                             valid_tokens = response_mask.sum().clamp_min(1)
-                            metrics["ahopd/horizon_mean"] = batch.batch["ahopd_horizon"].float().mean().item()
+                            response_lens = response_mask.sum(dim=-1).float().clamp_min(1.0)
+                            ahopd_horizon = batch.batch["ahopd_horizon"].float()
+                            prefix_ratio = (ahopd_horizon / response_lens).clamp(0.0, 1.0)
+                            metrics["ahopd/horizon_mean"] = ahopd_horizon.mean().item()
+                            metrics["ahopd/horizon_min"] = ahopd_horizon.min().item()
+                            metrics["ahopd/horizon_max"] = ahopd_horizon.max().item()
+                            metrics["ahopd/prefix_ratio_mean"] = prefix_ratio.mean().item()
+                            metrics["ahopd/suffix_ratio_mean"] = (1.0 - prefix_ratio).mean().item()
                             metrics["ahopd/reliability_mean"] = (
                                 (batch.batch["ahopd_reliability"] * response_mask).sum() / valid_tokens
                             ).item()
                             metrics["ahopd/token_weight_mean"] = (
                                 (batch.batch["ahopd_token_weights"] * response_mask).sum() / valid_tokens
                             ).item()
+                            for key, metric_name in [
+                                ("ahopd_overlap_score", "ahopd/overlap_score_mean"),
+                                ("ahopd_gap_score", "ahopd/gap_score_mean"),
+                                ("ahopd_prefix_score", "ahopd/prefix_score_mean"),
+                            ]:
+                                if key in batch.batch.keys():
+                                    metrics[metric_name] = ((batch.batch[key] * response_mask).sum() / valid_tokens).item()
  
 
                         # --- Top-K Metrics Analysis (Chunked) ---
@@ -2221,15 +2238,191 @@ class RayPPOTrainer:
                                 avg_adv_plot = swanlab.Image(plt, caption=f"Avg Advantage vs Position (Step {self.global_steps})")
                                 plt.close()
                                 
-                                # Log to SwanLab
-                                swanlab.log({
+                                # AH-OPD diagnostic plots: reliability, token weights, and horizon distribution.
+                                log_payload = {
                                     "viz/teacher_entropy_scatter": entropy_plot,
                                     "viz/advantage_scatter": adv_plot,
                                     "viz/avg_teacher_entropy_line": avg_entropy_plot,
-                                    "viz/avg_advantage_line": avg_adv_plot
-                                }, step=self.global_steps)
+                                    "viz/avg_advantage_line": avg_adv_plot,
+                                }
+
+                                if (
+                                    "ahopd_reliability" in batch.batch.keys()
+                                    and "ahopd_token_weights" in batch.batch.keys()
+                                ):
+                                    reliability_cpu = batch.batch["ahopd_reliability"].detach().cpu()
+                                    token_weight_cpu = batch.batch["ahopd_token_weights"].detach().cpu()
+                                    component_cpus = {}
+                                    for component_key in [
+                                        "ahopd_overlap_score",
+                                        "ahopd_gap_score",
+                                        "ahopd_prefix_score",
+                                    ]:
+                                        if component_key in batch.batch.keys():
+                                            component_cpus[component_key] = batch.batch[component_key].detach().cpu()
+                                    valid_reliability = reliability_cpu[valid_indices].numpy()
+                                    valid_token_weight = token_weight_cpu[valid_indices].numpy()
+
+                                    plt.figure(figsize=(10, 6))
+                                    plt.scatter(valid_positions, valid_reliability, alpha=0.05, s=1)
+                                    plt.title(f"AH-OPD Reliability vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Reliability")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.tight_layout()
+                                    reliability_scatter_plot = swanlab.Image(
+                                        plt, caption=f"AH-OPD Reliability vs Position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
+                                    plt.figure(figsize=(10, 6))
+                                    plt.scatter(valid_positions, valid_token_weight, alpha=0.05, s=1)
+                                    plt.title(f"AH-OPD Token Weight vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Token Weight")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.tight_layout()
+                                    token_weight_scatter_plot = swanlab.Image(
+                                        plt, caption=f"AH-OPD Token Weight vs Position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
+                                    sum_reliability = (reliability_cpu * mask_float).sum(dim=0)
+                                    sum_token_weight = (token_weight_cpu * mask_float).sum(dim=0)
+                                    avg_reliability = torch.zeros_like(sum_reliability)
+                                    avg_token_weight = torch.zeros_like(sum_token_weight)
+                                    avg_reliability[valid_pos_mask] = (
+                                        sum_reliability[valid_pos_mask] / count_per_pos[valid_pos_mask]
+                                    )
+                                    avg_token_weight[valid_pos_mask] = (
+                                        sum_token_weight[valid_pos_mask] / count_per_pos[valid_pos_mask]
+                                    )
+
+                                    if valid_pos_mask.any():
+                                        plot_avg_reliability = avg_reliability[:max_valid_pos + 1].numpy()
+                                        plot_avg_token_weight = avg_token_weight[:max_valid_pos + 1].numpy()
+                                    else:
+                                        plot_avg_reliability = np.array([])
+                                        plot_avg_token_weight = np.array([])
+
+                                    component_avg_np = {}
+                                    for component_key, component_cpu in component_cpus.items():
+                                        sum_component = (component_cpu * mask_float).sum(dim=0)
+                                        avg_component = torch.zeros_like(sum_component)
+                                        avg_component[valid_pos_mask] = (
+                                            sum_component[valid_pos_mask] / count_per_pos[valid_pos_mask]
+                                        )
+                                        if valid_pos_mask.any():
+                                            component_avg_np[component_key] = avg_component[:max_valid_pos + 1].numpy()
+                                        else:
+                                            component_avg_np[component_key] = np.array([])
+
+                                    plt.figure(figsize=(10, 6))
+                                    plt.plot(plot_positions, plot_avg_reliability)
+                                    plt.title(f"Avg AH-OPD Reliability vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Avg Reliability")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.grid(True)
+                                    plt.tight_layout()
+                                    avg_reliability_plot = swanlab.Image(
+                                        plt, caption=f"Avg AH-OPD Reliability vs Position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
+                                    plt.figure(figsize=(10, 6))
+                                    plt.plot(plot_positions, plot_avg_token_weight)
+                                    plt.title(f"Avg AH-OPD Token Weight vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Avg Token Weight")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.grid(True)
+                                    plt.tight_layout()
+                                    avg_token_weight_plot = swanlab.Image(
+                                        plt, caption=f"Avg AH-OPD Token Weight vs Position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
+                                    log_payload.update(
+                                        {
+                                            "viz/ahopd_reliability_scatter": reliability_scatter_plot,
+                                            "viz/ahopd_token_weight_scatter": token_weight_scatter_plot,
+                                            "viz/avg_ahopd_reliability_line": avg_reliability_plot,
+                                            "viz/avg_ahopd_token_weight_line": avg_token_weight_plot,
+                                        }
+                                    )
+
+                                    component_plot_names = {
+                                        "ahopd_overlap_score": ("viz/avg_ahopd_overlap_score_line", "Avg AH-OPD Overlap Score"),
+                                        "ahopd_gap_score": ("viz/avg_ahopd_gap_score_line", "Avg AH-OPD Entropy Gap Score"),
+                                        "ahopd_prefix_score": ("viz/avg_ahopd_prefix_score_line", "Avg AH-OPD Prefix Score"),
+                                    }
+                                    component_plots = []
+                                    for component_key, component_values in component_avg_np.items():
+                                        viz_key, title = component_plot_names[component_key]
+                                        plt.figure(figsize=(10, 6))
+                                        plt.plot(plot_positions, component_values)
+                                        plt.title(f"{title} vs Position (Step {self.global_steps})")
+                                        plt.xlabel("Position")
+                                        plt.ylabel(title)
+                                        plt.ylim(-0.05, 1.05)
+                                        plt.grid(True)
+                                        plt.tight_layout()
+                                        component_plot = swanlab.Image(
+                                            plt, caption=f"{title} vs Position (Step {self.global_steps})"
+                                        )
+                                        plt.close()
+                                        log_payload[viz_key] = component_plot
+                                        component_plots.append(component_plot)
+
+                                    log_dir = os.path.join(
+                                        self.config.trainer.validation_data_dir,
+                                        "ahopd_position_logs",
+                                    )
+                                    os.makedirs(log_dir, exist_ok=True)
+                                    save_payload = {
+                                        "positions": plot_positions,
+                                        "avg_reliability": plot_avg_reliability,
+                                        "avg_token_weight": plot_avg_token_weight,
+                                        "valid_count_per_position": count_per_pos[: len(plot_positions)].numpy(),
+                                    }
+                                    for component_key, component_values in component_avg_np.items():
+                                        save_payload[f"avg_{component_key}"] = component_values
+                                    if "ahopd_horizon" in batch.batch.keys():
+                                        save_payload["horizon"] = batch.batch["ahopd_horizon"].detach().float().cpu().numpy()
+                                    np.savez_compressed(
+                                        os.path.join(log_dir, f"step_{self.global_steps:07d}.npz"),
+                                        **save_payload,
+                                    )
+
+                                    del reliability_cpu, token_weight_cpu
+                                    del valid_reliability, valid_token_weight
+                                    del sum_reliability, sum_token_weight, avg_reliability, avg_token_weight
+                                    del plot_avg_reliability, plot_avg_token_weight
+                                    del reliability_scatter_plot, token_weight_scatter_plot
+                                    del avg_reliability_plot, avg_token_weight_plot
+                                    del component_cpus, component_avg_np, component_plots, save_payload
+
+                                if "ahopd_horizon" in batch.batch.keys():
+                                    horizon_cpu = batch.batch["ahopd_horizon"].detach().float().cpu().numpy()
+                                    plt.figure(figsize=(10, 6))
+                                    plt.hist(horizon_cpu, bins=30)
+                                    plt.title(f"AH-OPD Horizon Distribution (Step {self.global_steps})")
+                                    plt.xlabel("Horizon")
+                                    plt.ylabel("Count")
+                                    plt.grid(True)
+                                    plt.tight_layout()
+                                    horizon_hist_plot = swanlab.Image(
+                                        plt, caption=f"AH-OPD Horizon Distribution (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+                                    log_payload["viz/ahopd_horizon_hist"] = horizon_hist_plot
+                                    del horizon_cpu, horizon_hist_plot
+
+                                # Log to SwanLab
+                                swanlab.log(log_payload, step=self.global_steps)
                                 
-                                print(f"Logged 4 plots to SwanLab at step {self.global_steps}.")
+                                print(f"Logged {len(log_payload)} plots to SwanLab at step {self.global_steps}.")
                                 
                                 # Free memory
                                 del teacher_entropy_cpu, adv_cpu, mask_cpu, mask_float
@@ -2251,7 +2444,11 @@ class RayPPOTrainer:
                         "teacher_top_k_ids",
                         "teacher_top_k_log_probs",
                         "teacher_entropy",
+                        "student_entropy",
                         "overlap_mask",
+                        "ahopd_overlap_score",
+                        "ahopd_gap_score",
+                        "ahopd_prefix_score",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
                     ]

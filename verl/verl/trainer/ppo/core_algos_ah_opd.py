@@ -898,12 +898,15 @@ def _ahopd_get_config(config):
         "patience_windows": max(1, int(_config_get(raw, "patience_windows", 2))),
         "suffix_weight": float(_config_get(raw, "suffix_weight", 0.0)),
         "soft_weighting": bool(_config_get(raw, "soft_weighting", True)),
-        "overlap_weight": float(_config_get(raw, "overlap_weight", 0.55)),
+        "overlap_weight": float(_config_get(raw, "overlap_weight", 0.35)),
         "entropy_weight": float(_config_get(raw, "entropy_weight", 0.25)),
-        "reward_weight": float(_config_get(raw, "reward_weight", 0.20)),
+        "reward_weight": float(_config_get(raw, "reward_weight", 0.40)),
         "entropy_threshold": float(_config_get(raw, "entropy_threshold", 3.0)),
         "entropy_temperature": max(1e-6, float(_config_get(raw, "entropy_temperature", 1.0))),
         "reward_temperature": max(1e-6, float(_config_get(raw, "reward_temperature", 1.0))),
+        "entropy_gap_temperature": max(1e-6, float(_config_get(raw, "entropy_gap_temperature", 0.3))),
+        "prefix_window_size": max(1, int(_config_get(raw, "prefix_window_size", 1024))),
+        "eps": max(1e-8, float(_config_get(raw, "eps", 1e-6))),
     }
 
 
@@ -926,6 +929,19 @@ def _ahopd_smooth(values, response_mask, window_size):
         numer = numer[:, : values.shape[-1]]
         denom = denom[:, : values.shape[-1]]
     return numer / denom
+
+
+def _ahopd_causal_prefix_mean(values, response_mask, window_size):
+    """Mean over previous tokens in [t - window_size, t), excluding current token."""
+    shifted_values = torch.nn.functional.pad(values[:, :-1], (1, 0))
+    shifted_mask = torch.nn.functional.pad(response_mask[:, :-1], (1, 0))
+    kernel = torch.ones(1, 1, window_size, device=values.device, dtype=values.dtype)
+    numer = torch.nn.functional.conv1d((shifted_values * shifted_mask).unsqueeze(1), kernel, padding=window_size - 1)
+    denom = torch.nn.functional.conv1d(shifted_mask.unsqueeze(1), kernel, padding=window_size - 1)
+    numer = numer.squeeze(1)[:, : values.shape[-1]]
+    denom = denom.squeeze(1)[:, : values.shape[-1]]
+    prefix_mean = numer / denom.clamp_min(1.0)
+    return torch.where(denom > 0, prefix_mean, torch.ones_like(prefix_mean))
 
 
 def _ahopd_find_horizon(reliability, response_mask, ah_cfg):
@@ -959,37 +975,48 @@ def _ahopd_find_horizon(reliability, response_mask, ah_cfg):
     return horizons
 
 
-def _ahopd_reliability_weights(token_level_rewards, response_mask, config, overlap_mask=None, teacher_entropy=None):
+def _ahopd_reliability_weights(
+    token_level_rewards,
+    response_mask,
+    config,
+    overlap_mask=None,
+    teacher_entropy=None,
+    student_entropy=None,
+):
     ah_cfg = _ahopd_get_config(config)
     mask = response_mask.to(dtype=token_level_rewards.dtype)
-    token_scores = _ahopd_token_scores(token_level_rewards).to(dtype=token_level_rewards.dtype)
-
-    components = []
-    component_weights = []
 
     if overlap_mask is not None:
         overlap_score = overlap_mask.to(dtype=token_level_rewards.dtype)
         if overlap_score.dim() == 3:
             overlap_score = overlap_score.mean(dim=-1)
-        components.append(overlap_score.clamp(0.0, 1.0))
-        component_weights.append(ah_cfg["overlap_weight"])
+        overlap_score = overlap_score.clamp(0.0, 1.0)
+    else:
+        overlap_score = torch.ones_like(mask)
 
-    if teacher_entropy is not None:
+    if student_entropy is not None and teacher_entropy is not None:
+        student_entropy = student_entropy.to(dtype=token_level_rewards.dtype)
         teacher_entropy = teacher_entropy.to(dtype=token_level_rewards.dtype)
-        entropy_score = torch.sigmoid(
-            (ah_cfg["entropy_threshold"] - teacher_entropy) / ah_cfg["entropy_temperature"]
+        gap_score = torch.sigmoid(
+            (student_entropy - teacher_entropy) / ah_cfg["entropy_gap_temperature"]
         )
-        components.append(entropy_score)
-        component_weights.append(ah_cfg["entropy_weight"])
+    elif teacher_entropy is not None:
+        teacher_entropy = teacher_entropy.to(dtype=token_level_rewards.dtype)
+        gap_score = torch.sigmoid((ah_cfg["entropy_threshold"] - teacher_entropy) / ah_cfg["entropy_temperature"])
+    else:
+        gap_score = torch.ones_like(mask)
+    gap_score = gap_score.clamp(0.0, 1.0)
 
-    abs_reward = token_scores.abs()
-    per_seq_mean = (abs_reward * mask).sum(dim=-1, keepdim=True) / mask.sum(dim=-1, keepdim=True).clamp_min(1.0)
-    reward_score = torch.sigmoid((abs_reward - per_seq_mean) / ah_cfg["reward_temperature"])
-    components.append(reward_score)
-    component_weights.append(ah_cfg["reward_weight"])
+    prefix_score = _ahopd_causal_prefix_mean(overlap_score, mask, ah_cfg["prefix_window_size"]).clamp(0.0, 1.0)
 
-    weight_sum = max(sum(component_weights), 1e-6)
-    reliability = sum(weight * component for weight, component in zip(component_weights, components)) / weight_sum
+    eps = ah_cfg["eps"]
+    weight_sum = max(ah_cfg["overlap_weight"] + ah_cfg["entropy_weight"] + ah_cfg["reward_weight"], eps)
+    log_reliability = (
+        ah_cfg["overlap_weight"] * torch.log(overlap_score.clamp_min(eps))
+        + ah_cfg["entropy_weight"] * torch.log(gap_score.clamp_min(eps))
+        + ah_cfg["reward_weight"] * torch.log(prefix_score.clamp_min(eps))
+    ) / weight_sum
+    reliability = torch.exp(log_reliability)
     reliability = _ahopd_smooth(reliability, mask, ah_cfg["window_size"]) * mask
 
     horizons = _ahopd_find_horizon(reliability, mask, ah_cfg)
@@ -1011,7 +1038,12 @@ def _ahopd_reliability_weights(token_level_rewards, response_mask, config, overl
         )
 
     token_weights = token_weights * mask
-    return token_weights, reliability, horizons
+    components = {
+        "ahopd_overlap_score": overlap_score.detach(),
+        "ahopd_gap_score": gap_score.detach(),
+        "ahopd_prefix_score": prefix_score.detach(),
+    }
+    return token_weights, reliability, horizons, components
 
 
 @register_adv_est("adaptive_horizon_token_reward")
@@ -1021,6 +1053,7 @@ def compute_adaptive_horizon_token_reward_advantage(
     config: Optional[AlgoConfig] = None,
     overlap_mask: Optional[torch.Tensor] = None,
     teacher_entropy: Optional[torch.Tensor] = None,
+    student_entropy: Optional[torch.Tensor] = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """
@@ -1029,8 +1062,8 @@ def compute_adaptive_horizon_token_reward_advantage(
     It starts from token-level OPD rewards, estimates whether dense teacher
     supervision is reliable at each response position, and down-weights or
     truncates unreliable suffix tokens. Reliability is computed from available
-    OPD diagnostics: teacher/student top-k overlap, teacher entropy, and local
-    reward magnitude.
+    OPD diagnostics: teacher/student top-k overlap, student-teacher entropy gap,
+    and causal prefix overlap.
     """
     with torch.no_grad():
         ah_cfg = _ahopd_get_config(config)
@@ -1044,12 +1077,13 @@ def compute_adaptive_horizon_token_reward_advantage(
             returns = advantages.clone()
             return advantages, returns, {}
 
-        token_weights, reliability, horizons = _ahopd_reliability_weights(
+        token_weights, reliability, horizons, reliability_components = _ahopd_reliability_weights(
             token_level_rewards=token_level_rewards,
             response_mask=response_mask,
             config=config,
             overlap_mask=overlap_mask,
             teacher_entropy=teacher_entropy,
+            student_entropy=student_entropy,
         )
 
         if token_level_rewards.dim() == 3:
@@ -1065,6 +1099,7 @@ def compute_adaptive_horizon_token_reward_advantage(
         "ahopd_reliability": reliability.detach(),
         "ahopd_horizon": horizons.to(dtype=token_level_rewards.dtype).detach(),
     }
+    extra_metrics.update(reliability_components)
     return advantages, returns, extra_metrics
 
 
