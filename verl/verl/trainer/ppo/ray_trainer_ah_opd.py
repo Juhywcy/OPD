@@ -328,6 +328,10 @@ class RayPPOTrainer:
         self.config = config
         self.reward_fn = reward_fn
         self.val_reward_fn = val_reward_fn
+        if self.config.trainer.get("default_local_dir", None):
+            os.makedirs(self.config.trainer.default_local_dir, exist_ok=True)
+        if self.config.trainer.get("validation_data_dir", None):
+            os.makedirs(self.config.trainer.validation_data_dir, exist_ok=True)
 
         self.hybrid_engine = config.actor_rollout_ref.hybrid_engine
         assert self.hybrid_engine, "Currently, only support hybrid engine"
