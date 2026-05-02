@@ -248,7 +248,7 @@ python3 -m verl.trainer.main_ppo_ah_opd \
     trainer.save_freq=20 \
     trainer.test_freq=20 \
     trainer.total_epochs=1 \
-    trainer.total_training_steps=$TOTAL_TRAINING_STEPS \
+    trainer.total_training_steps=400 \
     trainer.default_local_dir="$CKPT_PATH" \
     trainer.is_plot=$IS_PLOT \
 
