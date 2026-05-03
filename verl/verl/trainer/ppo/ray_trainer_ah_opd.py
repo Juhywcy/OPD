@@ -1415,6 +1415,21 @@ class RayPPOTrainer:
                             metrics["ahopd/token_weight_mean"] = (
                                 (batch.batch["ahopd_token_weights"] * response_mask).sum() / valid_tokens
                             ).item()
+                            if "ahopd_outcome_weights" in batch.batch.keys():
+                                metrics["ahopd/outcome_weight_mean"] = (
+                                    (batch.batch["ahopd_outcome_weights"] * response_mask).sum() / valid_tokens
+                                ).item()
+                            if "ahopd_outcome_advantages" in batch.batch.keys():
+                                outcome_advantages = batch.batch["ahopd_outcome_advantages"]
+                                if outcome_advantages.dim() == 3:
+                                    outcome_mask = response_mask.unsqueeze(-1).expand_as(outcome_advantages)
+                                    outcome_valid_tokens = outcome_mask.sum().clamp_min(1)
+                                else:
+                                    outcome_mask = response_mask
+                                    outcome_valid_tokens = valid_tokens
+                                metrics["ahopd/outcome_advantage_mean"] = (
+                                    (outcome_advantages * outcome_mask).sum() / outcome_valid_tokens
+                                ).item()
                             for key, metric_name in [
                                 ("ahopd_overlap_score", "ahopd/overlap_score_mean"),
                                 ("ahopd_gap_score", "ahopd/gap_score_mean"),
@@ -2256,6 +2271,10 @@ class RayPPOTrainer:
                                 ):
                                     reliability_cpu = batch.batch["ahopd_reliability"].detach().cpu()
                                     token_weight_cpu = batch.batch["ahopd_token_weights"].detach().cpu()
+                                    if "ahopd_outcome_weights" in batch.batch.keys():
+                                        outcome_weight_cpu = batch.batch["ahopd_outcome_weights"].detach().cpu()
+                                    else:
+                                        outcome_weight_cpu = (1.0 - batch.batch["ahopd_token_weights"]).detach().cpu()
                                     component_cpus = {}
                                     for component_key in [
                                         "ahopd_overlap_score",
@@ -2266,6 +2285,7 @@ class RayPPOTrainer:
                                             component_cpus[component_key] = batch.batch[component_key].detach().cpu()
                                     valid_reliability = reliability_cpu[valid_indices].numpy()
                                     valid_token_weight = token_weight_cpu[valid_indices].numpy()
+                                    valid_outcome_weight = outcome_weight_cpu[valid_indices].numpy()
 
                                     plt.figure(figsize=(10, 6))
                                     plt.scatter(valid_positions, valid_reliability, alpha=0.05, s=1)
@@ -2291,23 +2311,42 @@ class RayPPOTrainer:
                                     )
                                     plt.close()
 
+                                    plt.figure(figsize=(10, 6))
+                                    plt.scatter(valid_positions, valid_outcome_weight, alpha=0.05, s=1)
+                                    plt.title(f"AH-OPD Outcome Weight vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Outcome Weight")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.tight_layout()
+                                    outcome_weight_scatter_plot = swanlab.Image(
+                                        plt, caption=f"AH-OPD Outcome Weight vs Position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
                                     sum_reliability = (reliability_cpu * mask_float).sum(dim=0)
                                     sum_token_weight = (token_weight_cpu * mask_float).sum(dim=0)
+                                    sum_outcome_weight = (outcome_weight_cpu * mask_float).sum(dim=0)
                                     avg_reliability = torch.zeros_like(sum_reliability)
                                     avg_token_weight = torch.zeros_like(sum_token_weight)
+                                    avg_outcome_weight = torch.zeros_like(sum_outcome_weight)
                                     avg_reliability[valid_pos_mask] = (
                                         sum_reliability[valid_pos_mask] / count_per_pos[valid_pos_mask]
                                     )
                                     avg_token_weight[valid_pos_mask] = (
                                         sum_token_weight[valid_pos_mask] / count_per_pos[valid_pos_mask]
                                     )
+                                    avg_outcome_weight[valid_pos_mask] = (
+                                        sum_outcome_weight[valid_pos_mask] / count_per_pos[valid_pos_mask]
+                                    )
 
                                     if valid_pos_mask.any():
                                         plot_avg_reliability = avg_reliability[:max_valid_pos + 1].numpy()
                                         plot_avg_token_weight = avg_token_weight[:max_valid_pos + 1].numpy()
+                                        plot_avg_outcome_weight = avg_outcome_weight[:max_valid_pos + 1].numpy()
                                     else:
                                         plot_avg_reliability = np.array([])
                                         plot_avg_token_weight = np.array([])
+                                        plot_avg_outcome_weight = np.array([])
 
                                     component_avg_np = {}
                                     for component_key, component_cpu in component_cpus.items():
@@ -2347,12 +2386,27 @@ class RayPPOTrainer:
                                     )
                                     plt.close()
 
+                                    plt.figure(figsize=(10, 6))
+                                    plt.plot(plot_positions, plot_avg_outcome_weight)
+                                    plt.title(f"Avg AH-OPD Outcome Weight vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Avg Outcome Weight")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.grid(True)
+                                    plt.tight_layout()
+                                    avg_outcome_weight_plot = swanlab.Image(
+                                        plt, caption=f"Avg AH-OPD Outcome Weight vs Position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
                                     log_payload.update(
                                         {
                                             "viz/ahopd_reliability_scatter": reliability_scatter_plot,
                                             "viz/ahopd_token_weight_scatter": token_weight_scatter_plot,
+                                            "viz/ahopd_outcome_weight_scatter": outcome_weight_scatter_plot,
                                             "viz/avg_ahopd_reliability_line": avg_reliability_plot,
                                             "viz/avg_ahopd_token_weight_line": avg_token_weight_plot,
+                                            "viz/avg_ahopd_outcome_weight_line": avg_outcome_weight_plot,
                                         }
                                     )
 
@@ -2388,6 +2442,7 @@ class RayPPOTrainer:
                                         "positions": plot_positions,
                                         "avg_reliability": plot_avg_reliability,
                                         "avg_token_weight": plot_avg_token_weight,
+                                        "avg_outcome_weight": plot_avg_outcome_weight,
                                         "valid_count_per_position": count_per_pos[: len(plot_positions)].numpy(),
                                     }
                                     for component_key, component_values in component_avg_np.items():
@@ -2399,12 +2454,13 @@ class RayPPOTrainer:
                                         **save_payload,
                                     )
 
-                                    del reliability_cpu, token_weight_cpu
-                                    del valid_reliability, valid_token_weight
-                                    del sum_reliability, sum_token_weight, avg_reliability, avg_token_weight
-                                    del plot_avg_reliability, plot_avg_token_weight
-                                    del reliability_scatter_plot, token_weight_scatter_plot
-                                    del avg_reliability_plot, avg_token_weight_plot
+                                    del reliability_cpu, token_weight_cpu, outcome_weight_cpu
+                                    del valid_reliability, valid_token_weight, valid_outcome_weight
+                                    del sum_reliability, sum_token_weight, sum_outcome_weight
+                                    del avg_reliability, avg_token_weight, avg_outcome_weight
+                                    del plot_avg_reliability, plot_avg_token_weight, plot_avg_outcome_weight
+                                    del reliability_scatter_plot, token_weight_scatter_plot, outcome_weight_scatter_plot
+                                    del avg_reliability_plot, avg_token_weight_plot, avg_outcome_weight_plot
                                     del component_cpus, component_avg_np, component_plots, save_payload
 
                                 if "ahopd_horizon" in batch.batch.keys():
@@ -2453,6 +2509,8 @@ class RayPPOTrainer:
                         "ahopd_overlap_score",
                         "ahopd_gap_score",
                         "ahopd_prefix_score",
+                        "ahopd_outcome_weights",
+                        "ahopd_outcome_advantages",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
                     ]
