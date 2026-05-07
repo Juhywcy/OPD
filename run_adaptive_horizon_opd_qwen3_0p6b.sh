@@ -24,7 +24,7 @@ export GRPO_OUTCOME_WEIGHT=${GRPO_OUTCOME_WEIGHT:-1.0}
 
 # DeepMath-103K
 export MAX_PROMPT_LENGTH=1024
-export MAX_RESP_LENGTH=12288  # TODO: 31744 /15360 / 7168 / 3072 / 5120
+export MAX_RESP_LENGTH=10240  # TODO: 31744 /15360 / 7168 / 3072 / 5120
 export MAX_VAL_RESP_LENGTH=31744 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
@@ -220,7 +220,7 @@ python3 -m verl.trainer.main_ppo_ah_opd \
     +actor_rollout_ref.rollout.reward_weight_mode=$REWARD_WEIGHT_MODE \
     +actor_rollout_ref.rollout.teacher_temperature=$TEACHER_TEMPERATURE \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$PARALLEL_SIZE \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
     actor_rollout_ref.rollout.max_model_len=$MAX_MODEL_LEN \
     actor_rollout_ref.rollout.n=$N_RESPONSES \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
@@ -238,7 +238,7 @@ python3 -m verl.trainer.main_ppo_ah_opd \
     reward_model.model.use_remove_padding=True \
     reward_model.model.fsdp_config.param_offload=False \
     +reward_model.model.dtype=$MODEL_DTYPE \
-    reward_model.micro_batch_size_per_gpu=4 \
+    reward_model.micro_batch_size_per_gpu=24 \
     custom_reward_function.path="verl/verl/utils/reward_score/ttrl_math/__init__.py" \
     custom_reward_function.name=reward_func \
     trainer.val_before_train=False \
