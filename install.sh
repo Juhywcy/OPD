@@ -24,4 +24,4 @@ pip install opencv-fixer && \
 pip install -e verl
 pip install swanlab matplotlib gpustat
 
-pip install latex2sympy2_extended
+pip install latex2sympy2_extended math_verify
