@@ -24,4 +24,4 @@ pip install opencv-fixer && \
 pip install -e verl
 pip install swanlab matplotlib gpustat
 
-huggingface-cli download --resume-download Juhywcy/verl-whl --local-dir third_party
+pip install latex2sympy2_extended
