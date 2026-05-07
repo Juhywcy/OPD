@@ -21,4 +21,7 @@ pip install opencv-python
 pip install opencv-fixer && \
     python -c "from opencv_fixer import AutoFix; AutoFix()"
 
-pip install swanlab matplotlib
+pip install -e verl
+pip install swanlab matplotlib gpustat
+
+huggingface-cli download --resume-download Juhywcy/verl-whl --local-dir third_party
