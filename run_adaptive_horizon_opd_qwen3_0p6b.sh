@@ -238,7 +238,7 @@ python3 -m verl.trainer.main_ppo_ah_opd \
     reward_model.model.use_remove_padding=True \
     reward_model.model.fsdp_config.param_offload=False \
     +reward_model.model.dtype=$MODEL_DTYPE \
-    reward_model.micro_batch_size_per_gpu=24 \
+    reward_model.micro_batch_size_per_gpu=8 \
     custom_reward_function.path="verl/verl/utils/reward_score/ttrl_math/__init__.py" \
     custom_reward_function.name=reward_func \
     trainer.val_before_train=False \
