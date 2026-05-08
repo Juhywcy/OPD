@@ -1442,6 +1442,13 @@ class RayPPOTrainer:
                             response_mask = batch.batch["response_mask"]
                             valid_tokens = response_mask.sum().clamp_min(1)
                             group_accuracy = batch.batch["dgopd_group_accuracy"].float()
+                            def _masked_abs_mean(values):
+                                if values.dim() == 3:
+                                    mask = response_mask.unsqueeze(-1).expand_as(values)
+                                else:
+                                    mask = response_mask
+                                return ((values.abs() * mask).sum() / mask.sum().clamp_min(1)).item()
+
                             metrics["dgopd/group_accuracy_mean"] = group_accuracy.mean().item()
                             metrics["dgopd/group_accuracy_min"] = group_accuracy.min().item()
                             metrics["dgopd/group_accuracy_max"] = group_accuracy.max().item()
@@ -1460,6 +1467,14 @@ class RayPPOTrainer:
                                 metrics["dgopd/rl_weight_mean"] = (
                                     (batch.batch["dgopd_rl_weights"] * response_mask).sum() / valid_tokens
                                 ).item()
+                            if "dgopd_effective_opd_weights" in batch.batch.keys():
+                                metrics["dgopd/effective_opd_weight_mean"] = (
+                                    (batch.batch["dgopd_effective_opd_weights"] * response_mask).sum() / valid_tokens
+                                ).item()
+                            if "dgopd_effective_rl_weights" in batch.batch.keys():
+                                metrics["dgopd/effective_rl_weight_mean"] = (
+                                    (batch.batch["dgopd_effective_rl_weights"] * response_mask).sum() / valid_tokens
+                                ).item()
                             if "dgopd_rl_advantages" in batch.batch.keys():
                                 rl_advantages = batch.batch["dgopd_rl_advantages"]
                                 metrics["dgopd/rl_advantage_mean"] = (
@@ -1468,6 +1483,16 @@ class RayPPOTrainer:
                                 metrics["dgopd/rl_advantage_abs_mean"] = (
                                     (rl_advantages.abs() * response_mask).sum() / valid_tokens
                                 ).item()
+                            if "dgopd_weighted_opd_advantages" in batch.batch.keys():
+                                metrics["dgopd/weighted_opd_advantage_abs_mean"] = _masked_abs_mean(
+                                    batch.batch["dgopd_weighted_opd_advantages"]
+                                )
+                            if "dgopd_weighted_rl_advantages" in batch.batch.keys():
+                                metrics["dgopd/weighted_rl_advantage_abs_mean"] = _masked_abs_mean(
+                                    batch.batch["dgopd_weighted_rl_advantages"]
+                                )
+                            if "advantages" in batch.batch.keys():
+                                metrics["dgopd/final_advantage_abs_mean"] = _masked_abs_mean(batch.batch["advantages"])
 
 
                         # --- Top-K Metrics Analysis (Chunked) ---
@@ -2546,7 +2571,11 @@ class RayPPOTrainer:
                         "dgopd_outcome_scores",
                         "dgopd_opd_weights",
                         "dgopd_rl_weights",
+                        "dgopd_effective_opd_weights",
+                        "dgopd_effective_rl_weights",
                         "dgopd_rl_advantages",
+                        "dgopd_weighted_opd_advantages",
+                        "dgopd_weighted_rl_advantages",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
                     ]

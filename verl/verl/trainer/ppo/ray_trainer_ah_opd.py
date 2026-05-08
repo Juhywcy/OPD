@@ -1412,9 +1412,13 @@ class RayPPOTrainer:
                             metrics["ahopd/reliability_mean"] = (
                                 (batch.batch["ahopd_reliability"] * response_mask).sum() / valid_tokens
                             ).item()
-                            metrics["ahopd/token_weight_mean"] = (
+                            metrics["ahopd/teacher_weight_mean"] = (
                                 (batch.batch["ahopd_token_weights"] * response_mask).sum() / valid_tokens
                             ).item()
+                            if "ahopd_transition_alpha" in batch.batch.keys():
+                                metrics["ahopd/transition_alpha_mean"] = (
+                                    (batch.batch["ahopd_transition_alpha"] * response_mask).sum() / valid_tokens
+                                ).item()
                             if "ahopd_outcome_weights" in batch.batch.keys():
                                 metrics["ahopd/outcome_weight_mean"] = (
                                     (batch.batch["ahopd_outcome_weights"] * response_mask).sum() / valid_tokens
@@ -1427,9 +1431,16 @@ class RayPPOTrainer:
                                 else:
                                     outcome_mask = response_mask
                                     outcome_valid_tokens = valid_tokens
-                                metrics["ahopd/outcome_advantage_mean"] = (
-                                    (outcome_advantages * outcome_mask).sum() / outcome_valid_tokens
-                                ).item()
+                                if "ahopd_outcome_weights" in batch.batch.keys():
+                                    if outcome_advantages.dim() == 3:
+                                        weighted_outcome = outcome_advantages * batch.batch["ahopd_outcome_weights"].unsqueeze(-1)
+                                        weighted_mask = outcome_mask
+                                    else:
+                                        weighted_outcome = outcome_advantages * batch.batch["ahopd_outcome_weights"]
+                                        weighted_mask = outcome_mask
+                                    metrics["ahopd/weighted_outcome_advantage_mean"] = (
+                                        (weighted_outcome * weighted_mask).sum() / outcome_valid_tokens
+                                    ).item()
                             for key, metric_name in [
                                 ("ahopd_overlap_score", "ahopd/overlap_score_mean"),
                                 ("ahopd_gap_score", "ahopd/gap_score_mean"),
@@ -2511,6 +2522,7 @@ class RayPPOTrainer:
                         "ahopd_prefix_score",
                         "ahopd_outcome_weights",
                         "ahopd_outcome_advantages",
+                        "ahopd_transition_alpha",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
                     ]

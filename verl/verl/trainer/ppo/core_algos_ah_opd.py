@@ -896,7 +896,6 @@ def _ahopd_get_config(config):
         "window_size": max(1, int(_config_get(raw, "window_size", 256))),
         "threshold": float(_config_get(raw, "threshold", 0.45)),
         "patience_windows": max(1, int(_config_get(raw, "patience_windows", 2))),
-        "suffix_weight": float(_config_get(raw, "suffix_weight", 0.0)),
         "soft_weighting": bool(_config_get(raw, "soft_weighting", True)),
         "overlap_weight": float(_config_get(raw, "overlap_weight", 0.35)),
         "entropy_weight": float(_config_get(raw, "entropy_weight", 0.25)),
@@ -908,7 +907,10 @@ def _ahopd_get_config(config):
         "prefix_window_size": max(1, int(_config_get(raw, "prefix_window_size", 1024))),
         "eps": max(1e-8, float(_config_get(raw, "eps", 1e-6))),
         "outcome_mix": bool(_config_get(raw, "outcome_mix", True)),
-        "outcome_weight": float(_config_get(raw, "outcome_weight", 1.0)),
+        "transition_power": max(
+            0.0,
+            float(_config_get(raw, "transition_power", _config_get(raw, "outcome_decay_power", 1.0))),
+        ),
     }
 
 
@@ -977,6 +979,19 @@ def _ahopd_find_horizon(reliability, response_mask, ah_cfg):
     return horizons
 
 
+def _ahopd_transition_progress(response_mask, horizons, power):
+    mask = response_mask.to(dtype=torch.float32)
+    positions = torch.arange(mask.shape[-1], device=mask.device, dtype=mask.dtype).unsqueeze(0)
+    valid_lens = mask.sum(dim=-1, keepdim=True).clamp_min(1.0)
+    horizon_pos = horizons.to(device=mask.device, dtype=mask.dtype).unsqueeze(-1)
+    suffix_len = valid_lens - horizon_pos
+    suffix_span = (suffix_len - 1.0).clamp_min(1.0)
+    progress = ((positions - horizon_pos) / suffix_span).clamp(0.0, 1.0)
+    single_token_suffix = (suffix_len <= 1.0) & (positions >= horizon_pos)
+    progress = torch.where(single_token_suffix, torch.ones_like(progress), progress)
+    return progress.pow(power) * mask
+
+
 def _ahopd_reliability_weights(
     token_level_rewards,
     response_mask,
@@ -1024,11 +1039,17 @@ def _ahopd_reliability_weights(
     horizons = _ahopd_find_horizon(reliability, mask, ah_cfg)
     positions = torch.arange(mask.shape[-1], device=mask.device).unsqueeze(0)
     prefix_mask = (positions < horizons.unsqueeze(-1)).to(dtype=mask.dtype) * mask
+    transition_progress = _ahopd_transition_progress(
+        response_mask=response_mask,
+        horizons=horizons,
+        power=ah_cfg["transition_power"],
+    ).to(dtype=mask.dtype)
+    teacher_weight = 1.0 - transition_progress
 
     token_weights = torch.where(
         prefix_mask > 0,
         torch.ones_like(mask),
-        torch.full_like(mask, ah_cfg["suffix_weight"]),
+        teacher_weight,
     )
 
     token_weights = token_weights * mask
@@ -1088,24 +1109,28 @@ def compute_adaptive_horizon_token_reward_advantage(
         dense_advantages = token_level_rewards * reward_mask
         advantages = dense_advantages * loss_weights
         outcome_advantages = None
+        transition_alpha = (1.0 - token_weights) * response_mask.to(dtype=token_weights.dtype)
+        outcome_weights_for_log = torch.zeros_like(token_weights)
         if ah_cfg["outcome_mix"]:
             rewards_for_outcome = kwargs.get("true_reward_score", token_level_rewards)
             if rewards_for_outcome.dim() == 3:
                 rewards_for_outcome = rewards_for_outcome.sum(dim=-1)
             outcome_scores = rewards_for_outcome.sum(dim=-1)
             outcome_advantages = outcome_scores.unsqueeze(-1) * response_mask.to(dtype=rewards_for_outcome.dtype)
-            outcome_weights = (1.0 - token_weights) * response_mask.to(dtype=token_weights.dtype)
+            outcome_weights = transition_alpha
+            outcome_weights_for_log = outcome_weights
             if token_level_rewards.dim() == 3:
                 outcome_advantages = outcome_advantages.unsqueeze(-1)
                 outcome_weights = outcome_weights.unsqueeze(-1)
-            advantages = advantages + ah_cfg["outcome_weight"] * outcome_advantages * outcome_weights
+            advantages = advantages + outcome_advantages * outcome_weights
         returns = advantages.clone()
 
     extra_metrics = {
         "ahopd_token_weights": token_weights.detach(),
+        "ahopd_transition_alpha": transition_alpha.detach(),
         "ahopd_reliability": reliability.detach(),
         "ahopd_horizon": horizons.to(dtype=token_level_rewards.dtype).detach(),
-        "ahopd_outcome_weights": ((1.0 - token_weights) * response_mask.to(dtype=token_weights.dtype)).detach(),
+        "ahopd_outcome_weights": outcome_weights_for_log.detach(),
     }
     if outcome_advantages is not None:
         extra_metrics["ahopd_outcome_advantages"] = outcome_advantages.detach()

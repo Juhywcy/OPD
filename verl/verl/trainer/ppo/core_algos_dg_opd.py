@@ -1198,10 +1198,9 @@ def compute_difficulty_gated_opd_advantage(
             rl_weights_for_adv = rl_weights
             rl_advantages_for_adv = rl_advantages
 
-        advantages = (
-            dg_cfg["opd_weight"] * dense_advantages * opd_weights_for_adv
-            + dg_cfg["rl_weight"] * rl_advantages_for_adv * rl_weights_for_adv
-        )
+        weighted_opd_advantages = dg_cfg["opd_weight"] * dense_advantages * opd_weights_for_adv
+        weighted_rl_advantages = dg_cfg["rl_weight"] * rl_advantages_for_adv * rl_weights_for_adv
+        advantages = weighted_opd_advantages + weighted_rl_advantages
         returns = advantages.clone()
 
     extra_metrics = {
@@ -1209,7 +1208,11 @@ def compute_difficulty_gated_opd_advantage(
         "dgopd_outcome_scores": outcome_scores.detach(),
         "dgopd_opd_weights": opd_weights.detach(),
         "dgopd_rl_weights": rl_weights.detach(),
+        "dgopd_effective_opd_weights": (dg_cfg["opd_weight"] * opd_weights).detach(),
+        "dgopd_effective_rl_weights": (dg_cfg["rl_weight"] * rl_weights).detach(),
         "dgopd_rl_advantages": rl_advantages.detach(),
+        "dgopd_weighted_opd_advantages": weighted_opd_advantages.detach(),
+        "dgopd_weighted_rl_advantages": weighted_rl_advantages.detach(),
     }
     return advantages, returns, extra_metrics
 
