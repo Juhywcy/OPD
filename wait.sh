@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-$SCRIPT_DIR/run_adaptive_horizon_opd_qwen3_0p6b.sh}"
 GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}"
-MAX_USED_MEM_MB="${MAX_USED_MEM_MB:-2000}"
+MAX_USED_MEM_MB="${MAX_USED_MEM_MB:-5000}"
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-300}"
 
 if ! command -v nvidia-smi >/dev/null 2>&1; then
@@ -43,7 +43,7 @@ while true; do
     if all_gpu_memory_below_threshold; then
         echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting training."
         cd "$SCRIPT_DIR"
-        exec bash "$TRAIN_SCRIPT"
+        exec bash run_difficulty_gated_opd_qwen3_0p6b.sh
     fi
 
     echo "Some selected GPUs are still above threshold. Check again in ${CHECK_INTERVAL_SEC}s."
