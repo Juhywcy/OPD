@@ -43,7 +43,7 @@ while true; do
     if all_gpu_memory_below_threshold; then
         echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting training."
         cd "$SCRIPT_DIR"
-        exec bash run_difficulty_gated_opd_qwen3_0p6b.sh
+        exec bash run_adaptive_horizon_opd_qwen3_0p6b.sh
     fi
 
     echo "Some selected GPUs are still above threshold. Check again in ${CHECK_INTERVAL_SEC}s."
