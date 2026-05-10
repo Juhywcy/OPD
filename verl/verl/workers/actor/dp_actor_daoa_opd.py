@@ -519,6 +519,13 @@ class DataParallelPPOActor(BasePPOActor):
         if T_logp is not None: T_logp = T_logp.to(device)
         overlap_mask = data.batch.get("overlap_mask", None)
         if overlap_mask is not None: overlap_mask = overlap_mask.to(device)
+        if strategy in ["only_tch", "union", "union-intersection"] and (T_ids is None or T_logp is None):
+            raise ValueError(
+                f"top_k_strategy={strategy} requires teacher_top_k_ids and teacher_top_k_log_probs. "
+                "Please set actor_rollout_ref.rollout.log_prob_top_k > 0 and keep reward_model.enable=True."
+            )
+        if strategy in ["intersection", "union-intersection"] and overlap_mask is None:
+            raise ValueError(f"top_k_strategy={strategy} requires overlap_mask from teacher top-k computation.")
 
         def compute_reward_weights(S_logp, T_logp, valid_mask, weight_mode, normalize=True):
             """Compute weights for reward calculation.

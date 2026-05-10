@@ -1129,7 +1129,7 @@ class RayPPOTrainer:
                             strategy = self.config.actor_rollout_ref.rollout.get("top_k_strategy", "only_stu")
                             kl_estimator = self.config.actor_rollout_ref.rollout.get("kl_estimator", "k1")
                             reward_weight_mode = self.config.actor_rollout_ref.rollout.get("reward_weight_mode", "student_p")
-                            topk_renormalize = self.config.actor_rollout_ref.rollout.get("topk_renormalize", True)
+                            topk_renormalize = self.config.algorithm.get("ah_opd", {}).get("topk_renormalize", True)
 
                             # pass global_steps and is_plot config to rm_wg
                             batch.meta_info["global_steps"] = self.global_steps

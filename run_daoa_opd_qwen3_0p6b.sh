@@ -189,6 +189,7 @@ python3 -m verl.trainer.main_ppo_daoa_opd \
     +algorithm.ah_opd.difficulty_high=$DAOA_DIFFICULTY_HIGH \
     +algorithm.ah_opd.difficulty_power=$DAOA_DIFFICULTY_POWER \
     +algorithm.ah_opd.outcome_weight=$DAOA_OUTCOME_WEIGHT \
+    +algorithm.ah_opd.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \
     data.val_files="$TEST_DATASET" \
@@ -225,7 +226,6 @@ python3 -m verl.trainer.main_ppo_daoa_opd \
     +actor_rollout_ref.rollout.log_prob_top_k=$LOG_PROB_TOP_K \
     +actor_rollout_ref.rollout.top_k_strategy=$TOP_K_STRATEGY \
     +actor_rollout_ref.rollout.reward_weight_mode=$REWARD_WEIGHT_MODE \
-    +actor_rollout_ref.rollout.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     +actor_rollout_ref.rollout.teacher_temperature=$TEACHER_TEMPERATURE \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$PARALLEL_SIZE \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
