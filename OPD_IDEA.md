@@ -334,3 +334,514 @@ ODW_MARGIN_DELTA=0.0
 ODW_TEMPERATURE=0.1
 ODW_FILTER_MIXED=True
 ```
+
+# OAL-OPD: Outcome-Aligned Logit OPD
+
+## 背景问题
+
+原始 OPD 的 token-level dense reward 来自 teacher 和 student 在候选 token 上的 log probability 差异。它能够提供细粒度监督，但这个监督方向不一定总是和最终 outcome 一致。
+
+如果一条 response 最终是正确的，那么更合理的监督是：强化 teacher 相比 student 更支持的 token。
+
+如果一条 response 最终是错误的，那么更合理的监督是：只保留 teacher 相比 student 更不支持的 token，使错误轨迹上的有害 token 被压低。
+
+OAL-OPD 的目标是让每个 token candidate 的 OPD 监督方向与最终 outcome 对齐。
+
+## 核心思想
+
+对每个 sampled response，先用 reward function 得到最终 outcome：
+
+$$
+y_i \in \{0, 1\}
+$$
+
+其中 $y_i=1$ 表示答案正确，$y_i=0$ 表示答案错误。
+
+对每个 token position 和 top-k candidate，计算 teacher 与 student 的 log probability 差：
+
+$$
+\Delta_{i,t,k}
+=
+\log p_T(a_{i,t,k} \mid x, a_{i,<t})
+-
+\log p_S(a_{i,t,k} \mid x, a_{i,<t})
+$$
+
+注意：代码里使用的是 log probability 差，不是未归一化的 raw logits 差。
+
+原始 OPD reward 可以写成：
+
+$$
+r^{teacher}_{i,t,k}
+=
+w_{i,t,k} \cdot \Delta_{i,t,k}
+$$
+
+其中 $w_{i,t,k}$ 是 top-k candidate 的权重。当前脚本默认：
+
+```bash
+TOP_K_STRATEGY=only_stu
+REWARD_WEIGHT_MODE=student_p
+OPD_TOPK_RENORMALIZE=False
+```
+
+也就是说候选 token 只取 student top-k，权重使用 student probability，并且不在 top-k 内重新归一化。
+
+## Outcome-Aligned Mask
+
+OAL-OPD 不改变原始 OPD reward 的数值形式，而是加一个 outcome-aligned mask。
+
+如果 response 正确：
+
+$$
+M_{i,t,k}
+=
+\mathbb{1}
+\left[
+\Delta_{i,t,k} > \delta
+\right]
+$$
+
+如果 response 错误：
+
+$$
+M_{i,t,k}
+=
+\mathbb{1}
+\left[
+\Delta_{i,t,k} < -\delta
+\right]
+$$
+
+其中 $\delta$ 是 margin，默认是 `0.0`。
+
+直观理解：
+
+- 正确 response：只保留 teacher 比 student 更看好的 candidate
+- 错误 response：只保留 teacher 比 student 更不看好的 candidate
+- 与 outcome 方向不一致的 token candidate 不参与更新
+
+## 最终 Advantage
+
+最终 advantage 为：
+
+$$
+A_{i,t,k}
+=
+M_{i,t,k}
+\cdot
+r^{teacher}_{i,t,k}
+$$
+
+也就是：
+
+$$
+A_{i,t,k}
+=
+M_{i,t,k}
+\cdot
+w_{i,t,k}
+\cdot
+\Delta_{i,t,k}
+$$
+
+这里不把 outcome reward 广播到 token 上。Outcome 只用于决定哪些 token candidate 的 teacher dense reward 与最终结果方向一致。
+
+## 与原始 OPD 的区别
+
+原始 OPD：
+
+$$
+A_{i,t,k}
+=
+r^{teacher}_{i,t,k}
+$$
+
+OAL-OPD：
+
+$$
+A_{i,t,k}
+=
+M_{i,t,k}
+\cdot
+r^{teacher}_{i,t,k}
+$$
+
+区别在于：OAL-OPD 会过滤掉和最终 outcome 不一致的 teacher dense reward。
+
+## 当前实现位置
+
+入口脚本：
+
+```bash
+scripts/train/run_outcome_aligned_logit_opd.sh
+```
+
+核心 estimator：
+
+```python
+@register_adv_est("outcome_aligned_logit_opd")
+def compute_outcome_aligned_logit_opd_advantage(...)
+```
+
+实现文件：
+
+```text
+verl/verl/trainer/ppo/core_algos_oal_opd.py
+```
+
+Actor：
+
+```text
+verl/verl/workers/actor/dp_actor_oal_opd.py
+```
+
+Trainer：
+
+```text
+verl/verl/trainer/ppo/ray_trainer_oal_opd.py
+```
+
+## 关键超参数
+
+### `OAL_MARGIN`
+
+控制保留 token candidate 所需的最小 log probability 差。
+
+默认：
+
+```bash
+OAL_MARGIN=0.0
+```
+
+如果设大一点，只有 teacher 和 student 差异更明显的 candidate 会被保留。
+
+## 日志指标
+
+当前实现会记录：
+
+```text
+oal/kept_candidate_ratio
+oal/positive_candidate_ratio
+oal/negative_candidate_ratio
+oal/token_keep_ratio
+oal/correct_response_ratio
+oal/outcome_score_mean
+```
+
+重点看：
+
+- `oal/kept_candidate_ratio`：被保留的 top-k candidate 比例
+- `oal/token_keep_ratio`：至少有一个 candidate 被保留的 token 比例
+- `oal/correct_response_ratio`：当前 batch 的正确 response 比例
+- `oal/outcome_score_mean`：最终 outcome reward 平均值
+
+## 当前默认运行方式
+
+```bash
+bash scripts/train/run_outcome_aligned_logit_opd.sh
+```
+
+默认使用：
+
+```bash
+ADV_ESTIMATOR=outcome_aligned_logit_opd
+TOP_K_STRATEGY=only_stu
+REWARD_WEIGHT_MODE=student_p
+OPD_TOPK_RENORMALIZE=False
+OAL_MARGIN=0.0
+```
+
+# BOAL-OPD: Block Outcome-Aligned OPD
+
+## 背景问题
+
+OAL-OPD 在每个 token candidate 上独立判断 teacher dense reward 是否与 outcome 对齐。这种做法粒度很细，但也可能过于局部：一个 token 的 log probability 差值很噪，不能稳定反映一段推理是否可靠。
+
+BOAL-OPD 使用固定长度 block 聚合局部信号。它不再逐 token 独立做 hard filter，而是判断每个 block 与 outcome 是否一致，并用前面 block 的错误累积来调节当前和后续 block 的监督强度。
+
+## 核心思想
+
+把每条 response 按固定长度切成 block：
+
+$$
+\mathcal{B}_j = [jW, (j+1)W)
+$$
+
+其中 $W$ 是 block size。
+
+对每个 block，累加该 block 内的 teacher-student log probability 差：
+
+$$
+S_{i,j}
+=
+\sum_{t \in \mathcal{B}_j}
+\sum_k
+\Delta_{i,t,k}
+$$
+
+其中：
+
+$$
+\Delta_{i,t,k}
+=
+\log p_T(a_{i,t,k})
+-
+\log p_S(a_{i,t,k})
+$$
+
+直观理解：
+
+- $S_{i,j} > 0$：teacher 整体比 student 更支持这个 block 中的候选 token
+- $S_{i,j} < 0$：teacher 整体比 student 更不支持这个 block 中的候选 token
+
+## Block 与 Outcome 的对齐判断
+
+如果 response 正确：
+
+$$
+\text{aligned}_{i,j}
+=
+\mathbb{1}
+\left[
+S_{i,j} > \delta
+\right]
+$$
+
+如果 response 错误：
+
+$$
+\text{aligned}_{i,j}
+=
+\mathbb{1}
+\left[
+S_{i,j} < -\delta
+\right]
+$$
+
+其中 $\delta$ 是 block-level margin。
+
+也就是说：
+
+- 正确 response 中，teacher 应该整体支持该 block
+- 错误 response 中，teacher 应该整体反对该 block
+
+如果不满足这个关系，就认为该 block 与 outcome 不对齐。
+
+## 累积 Bad Block 衰减
+
+BOAL-OPD 的关键不是只看当前 block，而是看到目前为止有多少 block 已经与 outcome 不对齐。
+
+定义：
+
+$$
+C_{i,j}
+=
+\sum_{l=0}^{j}
+\mathbb{1}
+\left[
+\text{aligned}_{i,l}=0
+\right]
+$$
+
+注意这里包含当前 block。如果当前 block 本身不对齐，那么它自己的权重也会立即降低。
+
+block 权重为：
+
+$$
+g_{i,j}
+=
+\exp
+\left(
+-\lambda C_{i,j}
+\right)
+$$
+
+其中 $\lambda$ 是衰减系数。
+
+直观理解：
+
+- 前面一路都对齐：$C_{i,j}=0$，权重为 1
+- 当前 block 第一次不对齐：$C_{i,j}=1$，权重为 $\exp(-\lambda)$
+- 不对齐 block 越多，后续 teacher dense reward 越不可信
+
+## 最终 Advantage
+
+BOAL-OPD 仍然保留 teacher dense reward，只是用 block 权重调节强度：
+
+$$
+A_{i,t,k}
+=
+g_{i,b(t)}
+\cdot
+r^{teacher}_{i,t,k}
+$$
+
+其中 $b(t)$ 表示 token `t` 所属的 block。
+
+如果原始 OPD reward 为：
+
+$$
+r^{teacher}_{i,t,k}
+=
+w_{i,t,k}
+\cdot
+\Delta_{i,t,k}
+$$
+
+则 BOAL-OPD 为：
+
+$$
+A_{i,t,k}
+=
+g_{i,b(t)}
+\cdot
+w_{i,t,k}
+\cdot
+\Delta_{i,t,k}
+$$
+
+## 与 OAL-OPD 的区别
+
+OAL-OPD 是 token candidate 级 hard filter：
+
+$$
+A_{i,t,k}
+=
+M_{i,t,k}
+r^{teacher}_{i,t,k}
+$$
+
+BOAL-OPD 是 block 级 soft decay：
+
+$$
+A_{i,t,k}
+=
+g_{i,b(t)}
+r^{teacher}_{i,t,k}
+$$
+
+OAL 更激进，直接把不符合方向的 candidate 置零。
+
+BOAL 更平滑，用 block-level 的历史不对齐程度逐渐降低 teacher 监督。
+
+## 当前实现位置
+
+入口脚本：
+
+```bash
+scripts/train/run_block_outcome_aligned_opd.sh
+```
+
+核心 estimator：
+
+```python
+@register_adv_est("block_outcome_aligned_opd")
+def compute_block_outcome_aligned_opd_advantage(...)
+```
+
+实现文件：
+
+```text
+verl/verl/trainer/ppo/core_algos_boal_opd.py
+```
+
+Actor：
+
+```text
+verl/verl/workers/actor/dp_actor_boal_opd.py
+```
+
+Trainer：
+
+```text
+verl/verl/trainer/ppo/ray_trainer_boal_opd.py
+```
+
+## 关键超参数
+
+### `BOAL_BLOCK_SIZE`
+
+block 长度。
+
+默认：
+
+```bash
+BOAL_BLOCK_SIZE=512
+```
+
+block 越小，定位越细，但 block score 更噪。
+
+block 越大，判断更稳，但信用分配更粗。
+
+### `BOAL_ALIGN_MARGIN`
+
+block 对齐判断的 margin。
+
+默认：
+
+```bash
+BOAL_ALIGN_MARGIN=0.0
+```
+
+设为正数后，需要 block score 更明显地与 outcome 同向，才认为该 block 对齐。
+
+### `BOAL_DECAY_LAMBDA`
+
+bad block 累积衰减系数。
+
+默认：
+
+```bash
+BOAL_DECAY_LAMBDA=0.25
+```
+
+权重公式：
+
+$$
+g = \exp(-\lambda C)
+$$
+
+如果 $\lambda$ 越大，遇到不对齐 block 后 teacher 监督下降越快。
+
+## 日志指标
+
+当前实现会记录：
+
+```text
+boal/block_weight_mean
+boal/block_weight_min
+boal/block_weight_max
+boal/block_score_mean
+boal/block_score_abs_mean
+boal/aligned_token_ratio
+boal/cumulative_bad_mean
+boal/correct_response_ratio
+boal/outcome_score_mean
+```
+
+重点看：
+
+- `boal/block_weight_mean`：平均 teacher 监督保留强度
+- `boal/aligned_token_ratio`：处在 outcome-aligned block 里的 token 比例
+- `boal/cumulative_bad_mean`：平均累计 bad block 数
+- `boal/block_score_mean`：block-level teacher-student 差值方向
+- `boal/block_score_abs_mean`：block-level 信号强度
+
+## 当前默认运行方式
+
+```bash
+bash scripts/train/run_block_outcome_aligned_opd.sh
+```
+
+默认使用：
+
+```bash
+ADV_ESTIMATOR=block_outcome_aligned_opd
+TOP_K_STRATEGY=only_stu
+REWARD_WEIGHT_MODE=student_p
+OPD_TOPK_RENORMALIZE=False
+BOAL_BLOCK_SIZE=512
+BOAL_ALIGN_MARGIN=0.0
+BOAL_DECAY_LAMBDA=0.25
+```
