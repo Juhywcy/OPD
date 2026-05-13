@@ -26,7 +26,7 @@ export GRPO_OUTCOME_WEIGHT=${GRPO_OUTCOME_WEIGHT:-1.0}
 # DeepMath-103K
 export MAX_PROMPT_LENGTH=1024
 export MAX_RESP_LENGTH=8192  # TODO: 31744 /15360 / 7168 / 3072 / 5120
-export MAX_VAL_RESP_LENGTH=24000 # TODO: 15360 / 7168 / 3072
+export MAX_VAL_RESP_LENGTH=31744 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
@@ -224,7 +224,7 @@ python3 -m verl.trainer.main_ppo_oal_opd \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=20 \
-    trainer.total_epochs=1 \
+    trainer.total_epochs=2 \
     trainer.default_local_dir="$CKPT_PATH" \
     trainer.is_plot=$IS_PLOT \
     # trainer.total_training_steps=400 \
