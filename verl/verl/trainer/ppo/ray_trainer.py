@@ -1119,6 +1119,7 @@ class RayPPOTrainer:
                             strategy = self.config.actor_rollout_ref.rollout.get("top_k_strategy", "only_stu")
                             kl_estimator = self.config.actor_rollout_ref.rollout.get("kl_estimator", "k1")
                             reward_weight_mode = self.config.actor_rollout_ref.rollout.get("reward_weight_mode", "student_p")
+                            topk_renormalize = self.config.algorithm.get("topk_renormalize", True)
 
                             # pass global_steps and is_plot config to rm_wg
                             batch.meta_info["global_steps"] = self.global_steps
@@ -1129,6 +1130,7 @@ class RayPPOTrainer:
                             batch.meta_info["top_k_strategy"] = strategy
                             batch.meta_info["kl_estimator"] = kl_estimator
                             batch.meta_info["reward_weight_mode"] = reward_weight_mode
+                            batch.meta_info["topk_renormalize"] = topk_renormalize
                             batch.meta_info["teacher_temperature"] = teacher_temperature
                             
                             with marked_timer("compute_rm_score", timing_raw, color="magenta"):

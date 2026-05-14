@@ -51,16 +51,17 @@ export GRPO_OUTCOME_WEIGHT=1.0
 # DeepMath-103K
 export MAX_PROMPT_LENGTH=1024
 export MAX_RESP_LENGTH=8192  # TODO: 31744 /15360 / 7168 / 3072 / 5120
-export MAX_VAL_RESP_LENGTH=31744 # TODO: 15360 / 7168 / 3072
+export MAX_VAL_RESP_LENGTH=24000 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
 export TEACHER_TEMPERATURE=${TEACHER_TEMPERATURE:-1.0} # Teacher logits temperature (default 1.0, no scaling)
 export REPETITION_PENALTY=${REPETITION_PENALTY:-1.0} # TODO: 1.0 / 1.1 / 1.2 (default 1.0, no penalty)
 export N_RESPONSES=4 # TODO: 4 / 8 / 16 / 32 (default: 8)
-export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-16} # 0 represents no top-k sampling
+export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-8} # 0 represents no top-k sampling
 export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" or "intersection" or "union" or "union-intersection"
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
+export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-False}
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -171,6 +172,7 @@ sleep 5
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=$ADV_ESTIMATOR \
     algorithm.grpo_outcome_weight=$GRPO_OUTCOME_WEIGHT \
+    +algorithm.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \
     data.val_files="$TEST_DATASET" \

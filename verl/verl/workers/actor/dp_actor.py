@@ -463,6 +463,7 @@ class DataParallelPPOActor(BasePPOActor):
         strategy = data.meta_info.get("top_k_strategy", "only_stu")
         kl_estimator = data.meta_info.get("kl_estimator", "k1")
         reward_weight_mode = data.meta_info.get("reward_weight_mode", "student_p")  # "student_p", "teacher_p", or "none"
+        topk_renormalize = data.meta_info.get("topk_renormalize", True)
         micro_batch_size = data.meta_info["micro_batch_size"]
         temperature = data.meta_info["temperature"]
         use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
@@ -560,13 +561,25 @@ class DataParallelPPOActor(BasePPOActor):
         if strategy == "only_stu":
             kl_val = S_logp - T_on_S
             valid_mask = torch.ones_like(S_logp, dtype=torch.bool)
-            norm_weights = compute_reward_weights(S_logp, T_on_S, valid_mask, reward_weight_mode)
+            norm_weights = compute_reward_weights(
+                S_logp,
+                T_on_S,
+                valid_mask,
+                reward_weight_mode,
+                normalize=topk_renormalize,
+            )
             rm_scores = -kl_val * norm_weights
             
         elif strategy == "only_tch":
             kl_val = S_on_T - T_logp
             valid_mask = torch.ones_like(S_on_T, dtype=torch.bool)
-            norm_weights = compute_reward_weights(S_on_T, T_logp, valid_mask, reward_weight_mode)
+            norm_weights = compute_reward_weights(
+                S_on_T,
+                T_logp,
+                valid_mask,
+                reward_weight_mode,
+                normalize=topk_renormalize,
+            )
             rm_scores = -kl_val * norm_weights
             res_tensors["union_top_k_ids"] = T_ids
             
@@ -574,7 +587,13 @@ class DataParallelPPOActor(BasePPOActor):
             valid_mask = overlap_mask.bool()
             kl_val = S_logp - T_on_S
             kl_val = torch.where(valid_mask, kl_val, torch.zeros_like(kl_val))
-            norm_weights = compute_reward_weights(S_logp, T_on_S, valid_mask, reward_weight_mode)
+            norm_weights = compute_reward_weights(
+                S_logp,
+                T_on_S,
+                valid_mask,
+                reward_weight_mode,
+                normalize=topk_renormalize,
+            )
             rm_scores = -kl_val * norm_weights
             
         elif strategy == "union":
@@ -590,7 +609,13 @@ class DataParallelPPOActor(BasePPOActor):
             
             kl_val = S_logp_union - T_logp_union
             kl_val = torch.where(valid_mask, kl_val, torch.zeros_like(kl_val))
-            norm_weights = compute_reward_weights(S_logp_union, T_logp_union, valid_mask, reward_weight_mode)
+            norm_weights = compute_reward_weights(
+                S_logp_union,
+                T_logp_union,
+                valid_mask,
+                reward_weight_mode,
+                normalize=topk_renormalize,
+            )
             rm_scores = -kl_val * norm_weights
             
             # Use different keys to avoid conflict with batch's student_top_k_ids
@@ -612,7 +637,13 @@ class DataParallelPPOActor(BasePPOActor):
                 
             kl_val = S_logp_union - T_logp_union
             kl_val = torch.where(valid_mask, kl_val, torch.zeros_like(kl_val))
-            norm_weights = compute_reward_weights(S_logp_union, T_logp_union, valid_mask, reward_weight_mode, normalize=False)
+            norm_weights = compute_reward_weights(
+                S_logp_union,
+                T_logp_union,
+                valid_mask,
+                reward_weight_mode,
+                normalize=topk_renormalize,
+            )
             rm_scores = -kl_val * norm_weights
             
             # Use different keys to avoid conflict with batch's student_top_k_ids
