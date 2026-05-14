@@ -15,6 +15,7 @@ export ADV_ESTIMATOR=token_reward_direct
 # export ADV_ESTIMATOR=token_grpo
 # export ADV_ESTIMATOR=grpo
 # export GRPO_OUTCOME_WEIGHT=1.0
+export GRPO_OUTCOME_WEIGHT=${GRPO_OUTCOME_WEIGHT:-1.0}
 # export ADV_ESTIMATOR=token_grpo
 # Swanlab setting used to continue exp  
 # export SWANLAB_RESUME=must
@@ -34,6 +35,7 @@ export N_RESPONSES=4 # TODO: 4 / 8 / 16 / 32 (default: 8)
 export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-16} # 0 represents no top-k sampling
 export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" or "intersection" or "union" or "union-intersection"
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
+export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-False}
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -145,6 +147,7 @@ mkdir -p "$SWANLAB_LOG_DIR"
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=$ADV_ESTIMATOR \
     algorithm.grpo_outcome_weight=$GRPO_OUTCOME_WEIGHT \
+    +algorithm.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \
     data.val_files="$TEST_DATASET" \
