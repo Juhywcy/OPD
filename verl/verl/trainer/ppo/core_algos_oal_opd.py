@@ -1190,6 +1190,7 @@ def _oal_get_config(config):
     return {
         "enabled": bool(_config_get(raw, "enabled", True)),
         "margin": float(_config_get(raw, "margin", 0.0)),
+        "split_mode": str(_config_get(raw, "split_mode", "oal")),
     }
 
 
@@ -1227,23 +1228,55 @@ def compute_outcome_aligned_logit_opd_advantage(
         margin = oal_cfg["margin"]
         align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(dtype=token_level_rewards.dtype)
 
+        split_mode = oal_cfg["split_mode"]
+        if split_mode not in {
+            "oal",
+            "align",
+            "anti",
+            "all",
+            "pos_align",
+            "pos_anti",
+            "neg_align",
+            "neg_anti",
+        }:
+            raise ValueError(
+                "Unsupported OAL split_mode: "
+                f"{split_mode}. Expected one of oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti."
+            )
+
         if token_level_rewards.dim() == 3:
             correct_view = correct.view(-1, 1, 1)
-            keep_mask = torch.where(
-                correct_view,
-                align_scores > margin,
-                align_scores < -margin,
-            ).to(dtype=token_level_rewards.dtype)
-            keep_mask = keep_mask * response_mask.unsqueeze(-1).to(dtype=token_level_rewards.dtype)
-            token_keep_mask = (keep_mask.sum(dim=-1) > 0).to(dtype=mask.dtype) * mask
+            valid_mask = response_mask.unsqueeze(-1).to(dtype=token_level_rewards.dtype)
+            pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_anti_mask = ((~correct_view) & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
         else:
             correct_view = correct.view(-1, 1)
-            keep_mask = torch.where(
-                correct_view,
-                align_scores > margin,
-                align_scores < -margin,
-            ).to(dtype=token_level_rewards.dtype)
-            keep_mask = keep_mask * mask
+            valid_mask = mask
+            pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_anti_mask = ((~correct_view) & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+
+        if split_mode in {"oal", "align"}:
+            keep_mask = pos_align_mask + neg_align_mask
+        elif split_mode == "anti":
+            keep_mask = pos_anti_mask + neg_anti_mask
+        elif split_mode == "all":
+            keep_mask = valid_mask
+        elif split_mode == "pos_align":
+            keep_mask = pos_align_mask
+        elif split_mode == "pos_anti":
+            keep_mask = pos_anti_mask
+        elif split_mode == "neg_align":
+            keep_mask = neg_align_mask
+        elif split_mode == "neg_anti":
+            keep_mask = neg_anti_mask
+
+        if token_level_rewards.dim() == 3:
+            token_keep_mask = (keep_mask.sum(dim=-1) > 0).to(dtype=mask.dtype) * mask
+        else:
             token_keep_mask = keep_mask
 
         advantages = dense_advantages * keep_mask
@@ -1254,6 +1287,10 @@ def compute_outcome_aligned_logit_opd_advantage(
         "oal_token_keep_mask": token_keep_mask.detach(),
         "oal_outcome_scores": outcome_scores.detach(),
         "oal_correct_mask": correct.to(dtype=mask.dtype).detach(),
+        "oal_pos_align_mask": pos_align_mask.detach(),
+        "oal_pos_anti_mask": pos_anti_mask.detach(),
+        "oal_neg_align_mask": neg_align_mask.detach(),
+        "oal_neg_anti_mask": neg_anti_mask.detach(),
     }
     return advantages, returns, extra_metrics
 

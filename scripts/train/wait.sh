@@ -3,7 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TRAIN_SCRIPT="${TRAIN_SCRIPT:-$SCRIPT_DIR/run_adaptive_horizon_opd_qwen3_0p6b.sh}"
+TRAIN_SCRIPT="${TRAIN_SCRIPT:-$SCRIPT_DIR/run_outcome_aligned_logit_opd.sh}"
+OAL_SPLIT_MODES="${OAL_SPLIT_MODES:-pos_align,pos_anti,neg_align,neg_anti}"
 GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}"
 MAX_USED_MEM_MB="${MAX_USED_MEM_MB:-7000}"
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-300}"
@@ -41,12 +42,17 @@ while true; do
     nvidia-smi --id="$GPU_IDS" --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits
 
     if all_gpu_memory_below_threshold; then
-        echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting training."
-        cd "$SCRIPT_DIR"
-        exec bash run_adaptive_horizon_opd_qwen3_0p6b.sh
+        echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting OAL split experiments."
+        IFS=',' read -r -a split_mode_array <<< "$OAL_SPLIT_MODES"
+        for split_mode in "${split_mode_array[@]}"; do
+            split_mode="${split_mode//[[:space:]]/}"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running OAL_SPLIT_MODE=${split_mode}"
+            OAL_SPLIT_MODE="$split_mode" bash "$TRAIN_SCRIPT"
+        done
+        echo "All OAL split experiments finished."
+        exit 0
     fi
 
     echo "Some selected GPUs are still above threshold. Check again in ${CHECK_INTERVAL_SEC}s."
     sleep "$CHECK_INTERVAL_SEC"
 done
-

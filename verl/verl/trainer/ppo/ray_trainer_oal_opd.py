@@ -1530,6 +1530,78 @@ class RayPPOTrainer:
                             ).item()
                             metrics["oal/correct_response_ratio"] = batch.batch["oal_correct_mask"].float().mean().item()
                             metrics["oal/outcome_score_mean"] = batch.batch["oal_outcome_scores"].float().mean().item()
+                            split_mode = self.config.algorithm.get("oal_opd", {}).get("split_mode", "oal")
+                            split_mode_to_id = {
+                                "oal": 0,
+                                "align": 0,
+                                "anti": 1,
+                                "all": 2,
+                                "pos_align": 3,
+                                "pos_anti": 4,
+                                "neg_align": 5,
+                                "neg_anti": 6,
+                            }
+                            metrics["oal/split_mode_id"] = split_mode_to_id.get(split_mode, -1)
+                            dense_abs_mass = (token_level_rewards.float().abs() * candidate_mask).sum().clamp_min(1e-6)
+                            if "advantages" in batch.batch.keys():
+                                advantages = batch.batch["advantages"].float()
+                                metrics["oal/active_adv_abs_mass"] = advantages.abs().sum().item()
+                                metrics["oal/active_adv_abs_mass_ratio"] = (
+                                    advantages.abs().sum() / dense_abs_mass
+                                ).item()
+
+                            logit_delta_scores = batch.batch.get("logit_delta_scores", token_level_rewards).float()
+                            if logit_delta_scores.dim() != keep_mask.dim():
+                                logit_delta_scores = token_level_rewards.float()
+                            if token_level_rewards.dim() != keep_mask.dim():
+                                rewards_for_split = token_level_rewards.float().unsqueeze(-1).expand_as(keep_mask)
+                            else:
+                                rewards_for_split = token_level_rewards.float()
+                            positions = torch.arange(
+                                response_mask.shape[-1], device=response_mask.device, dtype=torch.float32
+                            )
+                            if keep_mask.dim() == 3:
+                                positions = positions.view(1, -1, 1).expand_as(keep_mask)
+                            else:
+                                positions = positions.view(1, -1).expand_as(keep_mask)
+
+                            def _log_oal_split_stats(metric_prefix, split_mask):
+                                split_mask = split_mask.float()
+                                split_count = split_mask.sum()
+                                split_count_safe = split_count.clamp_min(1)
+                                split_token_mask = (
+                                    (split_mask.sum(dim=-1) > 0).float()
+                                    if split_mask.dim() == 3
+                                    else split_mask.float()
+                                ) * response_mask.float()
+                                metrics[f"{metric_prefix}/candidate_ratio"] = (split_count / valid_candidates).item()
+                                metrics[f"{metric_prefix}/token_ratio"] = (
+                                    split_token_mask.sum() / response_mask.float().sum().clamp_min(1)
+                                ).item()
+                                metrics[f"{metric_prefix}/response_ratio"] = (
+                                    (split_token_mask.sum(dim=-1) > 0).float().mean()
+                                ).item()
+                                metrics[f"{metric_prefix}/reward_mean"] = (
+                                    (rewards_for_split * split_mask).sum() / split_count_safe
+                                ).item()
+                                metrics[f"{metric_prefix}/logit_delta_mean"] = (
+                                    (logit_delta_scores * split_mask).sum() / split_count_safe
+                                ).item()
+                                metrics[f"{metric_prefix}/position_mean"] = (
+                                    (positions * split_mask).sum() / split_count_safe
+                                ).item()
+                                metrics[f"{metric_prefix}/adv_abs_mass"] = (
+                                    (rewards_for_split.abs() * split_mask).sum()
+                                ).item()
+                                metrics[f"{metric_prefix}/adv_abs_mass_ratio"] = (
+                                    (rewards_for_split.abs() * split_mask).sum() / dense_abs_mass
+                                ).item()
+
+                            if "oal_pos_align_mask" in batch.batch.keys():
+                                _log_oal_split_stats("oal/pos_align", batch.batch["oal_pos_align_mask"])
+                                _log_oal_split_stats("oal/pos_anti", batch.batch["oal_pos_anti_mask"])
+                                _log_oal_split_stats("oal/neg_align", batch.batch["oal_neg_align_mask"])
+                                _log_oal_split_stats("oal/neg_anti", batch.batch["oal_neg_anti_mask"])
 
                         # --- Top-K Metrics Analysis (Chunked) ---
                         if "overlap_mask" in batch.batch.keys() and "advantages" in batch.batch.keys():
@@ -2315,6 +2387,7 @@ class RayPPOTrainer:
                                     plot_avg_adv_inter = avg_adv_inter[:max_valid_pos + 1].numpy() if avg_adv_inter is not None else None
                                     plot_avg_adv_only_stu = avg_adv_only_stu[:max_valid_pos + 1].numpy() if avg_adv_only_stu is not None else None
                                 else:
+                                    max_valid_pos = -1
                                     plot_positions = np.array([])
                                     plot_avg_entropy = np.array([])
                                     plot_avg_adv = np.array([])
@@ -2356,6 +2429,76 @@ class RayPPOTrainer:
                                     "viz/avg_teacher_entropy_line": avg_entropy_plot,
                                     "viz/avg_advantage_line": avg_adv_plot,
                                 }
+
+                                if "oal_pos_align_mask" in batch.batch.keys() and plot_positions.size > 0:
+                                    split_specs = [
+                                        ("pos_align", batch.batch["oal_pos_align_mask"].detach().cpu(), "tab:green"),
+                                        ("pos_anti", batch.batch["oal_pos_anti_mask"].detach().cpu(), "tab:red"),
+                                        ("neg_align", batch.batch["oal_neg_align_mask"].detach().cpu(), "tab:blue"),
+                                        ("neg_anti", batch.batch["oal_neg_anti_mask"].detach().cpu(), "tab:orange"),
+                                    ]
+                                    rewards_cpu = batch.batch["token_level_rewards"].detach().cpu().float()
+                                    if rewards_cpu.dim() == 2 and split_specs[0][1].dim() == 3:
+                                        rewards_cpu = rewards_cpu.unsqueeze(-1).expand_as(split_specs[0][1])
+                                    valid_candidate_den = mask_float
+                                    if split_specs[0][1].dim() == 3:
+                                        valid_candidate_den = mask_float.unsqueeze(-1).expand_as(split_specs[0][1])
+                                        pos_den = valid_candidate_den.sum(dim=(0, 2)).clamp_min(1.0)
+                                    else:
+                                        pos_den = valid_candidate_den.sum(dim=0).clamp_min(1.0)
+
+                                    plt.figure(figsize=(10, 6))
+                                    for label, split_mask_cpu, color in split_specs:
+                                        if split_mask_cpu.dim() == 3:
+                                            split_count_pos = split_mask_cpu.float().sum(dim=(0, 2))
+                                        else:
+                                            split_count_pos = split_mask_cpu.float().sum(dim=0)
+                                        split_ratio_pos = (split_count_pos / pos_den)[: max_valid_pos + 1].numpy()
+                                        plt.plot(plot_positions, split_ratio_pos, label=label, color=color)
+                                    plt.title(f"OAL Split Token Ratio vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Candidate Ratio")
+                                    plt.ylim(-0.05, 1.05)
+                                    plt.legend()
+                                    plt.grid(True)
+                                    plt.tight_layout()
+                                    oal_split_ratio_plot = swanlab.Image(
+                                        plt, caption=f"OAL split ratio by position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
+                                    plt.figure(figsize=(10, 6))
+                                    for label, split_mask_cpu, color in split_specs:
+                                        split_mask_float = split_mask_cpu.float()
+                                        if split_mask_float.dim() == 3:
+                                            split_count_pos = split_mask_float.sum(dim=(0, 2)).clamp_min(1.0)
+                                            split_reward_pos = (rewards_cpu * split_mask_float).sum(dim=(0, 2)) / split_count_pos
+                                        else:
+                                            split_count_pos = split_mask_float.sum(dim=0).clamp_min(1.0)
+                                            split_reward_pos = (rewards_cpu * split_mask_float).sum(dim=0) / split_count_pos
+                                        plt.plot(
+                                            plot_positions,
+                                            split_reward_pos[: max_valid_pos + 1].numpy(),
+                                            label=label,
+                                            color=color,
+                                        )
+                                    plt.title(f"OAL Split Reward vs Position (Step {self.global_steps})")
+                                    plt.xlabel("Position")
+                                    plt.ylabel("Mean Dense Reward")
+                                    plt.legend()
+                                    plt.grid(True)
+                                    plt.tight_layout()
+                                    oal_split_reward_plot = swanlab.Image(
+                                        plt, caption=f"OAL split reward by position (Step {self.global_steps})"
+                                    )
+                                    plt.close()
+
+                                    log_payload.update(
+                                        {
+                                            "viz/oal_split_ratio_by_position": oal_split_ratio_plot,
+                                            "viz/oal_split_reward_by_position": oal_split_reward_plot,
+                                        }
+                                    )
 
                                 if (
                                     "ahopd_reliability" in batch.batch.keys()
@@ -2630,6 +2773,10 @@ class RayPPOTrainer:
                         "oal_token_keep_mask",
                         "oal_outcome_scores",
                         "oal_correct_mask",
+                        "oal_pos_align_mask",
+                        "oal_pos_anti_mask",
+                        "oal_neg_align_mask",
+                        "oal_neg_anti_mask",
                         "logit_delta_scores",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
