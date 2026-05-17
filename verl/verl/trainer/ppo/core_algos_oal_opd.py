@@ -1272,7 +1272,7 @@ def compute_outcome_aligned_logit_opd_advantage(
 
         if token_level_rewards.dim() == 3:
             correct_view = correct.view(-1, 1, 1)
-            valid_mask = response_mask.unsqueeze(-1).to(dtype=token_level_rewards.dtype)
+            valid_mask = response_mask.unsqueeze(-1).expand_as(align_scores).to(dtype=token_level_rewards.dtype)
             pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
             pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
             neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
