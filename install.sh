@@ -25,3 +25,9 @@ pip install -e verl
 pip install swanlab matplotlib gpustat
 
 pip install latex2sympy2_extended math_verify
+
+export HF_ENDPOINT=https://hf-mirror.com
+
+huggingface-cli download --resume-download deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B --local-dir /home/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+
+huggingface-cli download --resume-download hbx/JustRL-DeepSeek-1.5B --local-dir /home/models/hbx/JustRL-DeepSeek-1.5B
