@@ -1531,6 +1531,7 @@ class RayPPOTrainer:
                             metrics["oal/correct_response_ratio"] = batch.batch["oal_correct_mask"].float().mean().item()
                             metrics["oal/outcome_score_mean"] = batch.batch["oal_outcome_scores"].float().mean().item()
                             split_mode = self.config.algorithm.get("oal_opd", {}).get("split_mode", "oal")
+                            weight_mode = self.config.algorithm.get("oal_opd", {}).get("weight_mode", "hard")
                             split_mode_to_id = {
                                 "oal": 0,
                                 "align": 0,
@@ -1542,6 +1543,15 @@ class RayPPOTrainer:
                                 "neg_anti": 6,
                             }
                             metrics["oal/split_mode_id"] = split_mode_to_id.get(split_mode, -1)
+                            metrics["oal/weight_mode_id"] = {"hard": 0, "rank": 1}.get(weight_mode, -1)
+                            if "oal_token_weights" in batch.batch.keys():
+                                token_weights = batch.batch["oal_token_weights"].float()
+                                valid_weights = token_weights[candidate_mask > 0]
+                                if valid_weights.numel() > 0:
+                                    metrics["oal/token_weight_mean"] = valid_weights.mean().item()
+                                    metrics["oal/token_weight_min"] = valid_weights.min().item()
+                                    metrics["oal/token_weight_max"] = valid_weights.max().item()
+                                    metrics["oal/token_weight_nonzero_ratio"] = (valid_weights > 0).float().mean().item()
                             dense_abs_mass = (token_level_rewards.float().abs() * candidate_mask).sum().clamp_min(1e-6)
                             if "advantages" in batch.batch.keys():
                                 advantages = batch.batch["advantages"].float()
@@ -2777,6 +2787,7 @@ class RayPPOTrainer:
                         "oal_pos_anti_mask",
                         "oal_neg_align_mask",
                         "oal_neg_anti_mask",
+                        "oal_token_weights",
                         "logit_delta_scores",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
