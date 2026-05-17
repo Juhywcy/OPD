@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TRAIN_SCRIPT="${TRAIN_SCRIPT:-$SCRIPT_DIR/run_outcome_aligned_logit_opd.sh}"
-OAL_SPLIT_MODES="${OAL_SPLIT_MODES:-pos_align,pos_anti,neg_align,neg_anti}"
+OAL_SPLIT_MODES="${OAL_SPLIT_MODES:-neg_align,neg_anti}"
 GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}"
 MAX_USED_MEM_MB="${MAX_USED_MEM_MB:-7000}"
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-300}"
