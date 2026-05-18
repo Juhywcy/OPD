@@ -39,7 +39,7 @@ export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "t
 export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-True}
 export OAL_MARGIN=${OAL_MARGIN:-0.0}
 export OAL_SPLIT_MODE=${OAL_SPLIT_MODE:-oal} # oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti
-export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-rank} # hard or rank
+export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-rank} # hard, rank, position_hard, or position_rank
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -113,7 +113,7 @@ export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
 export PARALLEL_SIZE=1
-export RUN_NAME=${RUN_NAME:-oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_${ACTOR_MODEL_NAME}_${REWARD_MODEL_NAME}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}}
+export RUN_NAME=${RUN_NAME:-oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
 export OUTLINES_CACHE_DIR=~/.cache/outlines/$(uuidgen)
 export NCCL_DEBUG=WARN

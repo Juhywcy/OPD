@@ -1543,7 +1543,9 @@ class RayPPOTrainer:
                                 "neg_anti": 6,
                             }
                             metrics["oal/split_mode_id"] = split_mode_to_id.get(split_mode, -1)
-                            metrics["oal/weight_mode_id"] = {"hard": 0, "rank": 1}.get(weight_mode, -1)
+                            metrics["oal/weight_mode_id"] = {"hard": 0, "rank": 1, "position_rank": 2, "position_hard": 3}.get(
+                                weight_mode, -1
+                            )
                             if "oal_token_weights" in batch.batch.keys():
                                 token_weights = batch.batch["oal_token_weights"].float()
                                 valid_weights = token_weights[candidate_mask > 0]
@@ -1552,6 +1554,16 @@ class RayPPOTrainer:
                                     metrics["oal/token_weight_min"] = valid_weights.min().item()
                                     metrics["oal/token_weight_max"] = valid_weights.max().item()
                                     metrics["oal/token_weight_nonzero_ratio"] = (valid_weights > 0).float().mean().item()
+                            if "oal_position_weights" in batch.batch.keys():
+                                position_weights = batch.batch["oal_position_weights"].float()
+                                valid_position_weights = position_weights[response_mask > 0]
+                                if valid_position_weights.numel() > 0:
+                                    metrics["oal/position_weight_mean"] = valid_position_weights.mean().item()
+                                    metrics["oal/position_weight_min"] = valid_position_weights.min().item()
+                                    metrics["oal/position_weight_max"] = valid_position_weights.max().item()
+                                    metrics["oal/position_weight_nonzero_ratio"] = (
+                                        valid_position_weights > 0
+                                    ).float().mean().item()
                             dense_abs_mass = (token_level_rewards.float().abs() * candidate_mask).sum().clamp_min(1e-6)
                             if "advantages" in batch.batch.keys():
                                 advantages = batch.batch["advantages"].float()
@@ -2788,6 +2800,7 @@ class RayPPOTrainer:
                         "oal_neg_align_mask",
                         "oal_neg_anti_mask",
                         "oal_token_weights",
+                        "oal_position_weights",
                         "logit_delta_scores",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",

@@ -1231,7 +1231,9 @@ def compute_outcome_aligned_logit_opd_advantage(
     OPD rewards are proportional to teacher_logp - student_logp on the
     selected candidate tokens. Hard mode keeps only outcome-aligned candidates.
     Rank mode softly weights candidates by their outcome-aligned score rank
-    within each response.
+    within each response. Position modes first aggregate the top-k teacher
+    signal at each position, then broadcast a position-level weight to all
+    candidates at that position.
     """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
@@ -1267,8 +1269,10 @@ def compute_outcome_aligned_logit_opd_advantage(
                 "Unsupported OAL split_mode: "
                 f"{split_mode}. Expected one of oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti."
             )
-        if weight_mode not in {"hard", "rank"}:
-            raise ValueError(f"Unsupported OAL weight_mode: {weight_mode}. Expected hard or rank.")
+        if weight_mode not in {"hard", "rank", "position_hard", "position_rank"}:
+            raise ValueError(
+                f"Unsupported OAL weight_mode: {weight_mode}. Expected hard, rank, position_hard, or position_rank."
+            )
 
         if token_level_rewards.dim() == 3:
             correct_view = correct.view(-1, 1, 1)
@@ -1300,6 +1304,7 @@ def compute_outcome_aligned_logit_opd_advantage(
         elif split_mode == "neg_anti":
             keep_mask = neg_anti_mask
 
+        position_weights = None
         if weight_mode == "rank":
             signed_outcome = correct.to(dtype=align_scores.dtype) * 2.0 - 1.0
             if token_level_rewards.dim() == 3:
@@ -1319,6 +1324,34 @@ def compute_outcome_aligned_logit_opd_advantage(
             else:
                 rank_eligible_mask = valid_mask
             keep_mask = _oal_rank_weights(outcome_aligned_scores, rank_eligible_mask)
+        elif weight_mode in {"position_hard", "position_rank"}:
+            signed_outcome = correct.to(dtype=token_level_rewards.dtype) * 2.0 - 1.0
+            if token_level_rewards.dim() == 3:
+                position_scores = align_scores.sum(dim=-1)
+            else:
+                position_scores = align_scores
+            outcome_aligned_position_scores = signed_outcome.view(-1, 1) * position_scores
+
+            if split_mode in {"pos_align", "pos_anti"}:
+                rank_eligible_mask = correct.view(-1, 1).to(dtype=mask.dtype) * mask
+            elif split_mode in {"neg_align", "neg_anti"}:
+                rank_eligible_mask = (~correct).view(-1, 1).to(dtype=mask.dtype) * mask
+            else:
+                rank_eligible_mask = mask
+
+            if weight_mode == "position_rank":
+                position_weights = _oal_rank_weights(outcome_aligned_position_scores, rank_eligible_mask)
+            else:
+                if split_mode in {"oal", "align", "all", "pos_align", "neg_align"}:
+                    position_weights = (outcome_aligned_position_scores > margin).to(dtype=mask.dtype)
+                elif split_mode in {"anti", "pos_anti", "neg_anti"}:
+                    position_weights = (outcome_aligned_position_scores < -margin).to(dtype=mask.dtype)
+                position_weights = position_weights * rank_eligible_mask
+
+            if token_level_rewards.dim() == 3:
+                keep_mask = position_weights.unsqueeze(-1).expand_as(token_level_rewards)
+            else:
+                keep_mask = position_weights
 
         if token_level_rewards.dim() == 3:
             token_keep_mask = (keep_mask.sum(dim=-1) > 0).to(dtype=mask.dtype) * mask
@@ -1339,6 +1372,8 @@ def compute_outcome_aligned_logit_opd_advantage(
         "oal_neg_anti_mask": neg_anti_mask.detach(),
         "oal_token_weights": keep_mask.detach(),
     }
+    if position_weights is not None:
+        extra_metrics["oal_position_weights"] = position_weights.detach()
     return advantages, returns, extra_metrics
 
 
