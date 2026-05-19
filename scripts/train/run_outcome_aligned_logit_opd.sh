@@ -228,7 +228,7 @@ python3 -m verl.trainer.main_ppo_oal_opd \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=20 \
-    trainer.total_epochs=1 \
+    trainer.total_epochs=2 \
     trainer.default_local_dir="$CKPT_PATH" \
     trainer.is_plot=$IS_PLOT \
     # trainer.total_training_steps=400 \
