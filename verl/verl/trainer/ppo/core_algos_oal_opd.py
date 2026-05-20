@@ -857,7 +857,7 @@ def compute_token_reward_direct_advantage(
     response_mask: torch.Tensor,
     config: Optional[AlgoConfig] = None,
     **kwargs,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """
     直接使用token-level reward作为advantage的最简单estimator
     Now supports 3D rewards (batch, seq_len, k) when using top-k sampling
@@ -871,13 +871,58 @@ def compute_token_reward_direct_advantage(
         returns: (bs, response_length) or (bs, response_length, k) 与rewards相同
     """
     with torch.no_grad():
+        original_response_mask = response_mask
+        oal_cfg = _oal_get_config(config)
+        margin = oal_cfg["margin"]
+
         # If rewards are 3D (batch, seq_len, k), broadcast mask to (batch, seq_len, 1)
         if token_level_rewards.dim() == 3:
-            response_mask = response_mask.unsqueeze(-1)
-        advantages = token_level_rewards * response_mask
+            reward_mask = response_mask.unsqueeze(-1)
+        else:
+            reward_mask = response_mask
+        advantages = token_level_rewards * reward_mask
         returns = advantages.clone()
-    
-    return advantages, returns
+
+        align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(dtype=token_level_rewards.dtype)
+        outcome_scores = _odw_outcome_scores(
+            kwargs.get("true_reward_score", None),
+            token_level_rewards,
+            original_response_mask,
+        )
+        correct = outcome_scores > 0.5
+
+        if token_level_rewards.dim() == 3:
+            correct_view = correct.view(-1, 1, 1)
+            valid_mask = original_response_mask.unsqueeze(-1).expand_as(align_scores).to(
+                dtype=token_level_rewards.dtype
+            )
+            pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_anti_mask = ((~correct_view) & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            token_keep_mask = original_response_mask.to(dtype=token_level_rewards.dtype)
+        else:
+            correct_view = correct.view(-1, 1)
+            valid_mask = original_response_mask.to(dtype=token_level_rewards.dtype)
+            pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            neg_anti_mask = ((~correct_view) & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            token_keep_mask = valid_mask
+
+        extra_metrics = {
+            "oal_keep_mask": valid_mask.detach(),
+            "oal_token_keep_mask": token_keep_mask.detach(),
+            "oal_outcome_scores": outcome_scores.detach(),
+            "oal_correct_mask": correct.to(dtype=original_response_mask.dtype).detach(),
+            "oal_pos_align_mask": pos_align_mask.detach(),
+            "oal_pos_anti_mask": pos_anti_mask.detach(),
+            "oal_neg_align_mask": neg_align_mask.detach(),
+            "oal_neg_anti_mask": neg_anti_mask.detach(),
+            "oal_token_weights": valid_mask.detach(),
+        }
+
+    return advantages, returns, extra_metrics
 
 
 def _config_get(config, key, default):

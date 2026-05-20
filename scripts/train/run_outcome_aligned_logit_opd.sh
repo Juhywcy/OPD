@@ -37,6 +37,7 @@ export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-16} # 0 represents no top-k sampling
 export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" or "intersection" or "union" or "union-intersection"
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
 export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-True}
+export OAL_ENABLED=${OAL_ENABLED:-True}
 export OAL_MARGIN=${OAL_MARGIN:-0.0}
 export OAL_SPLIT_MODE=${OAL_SPLIT_MODE:-oal} # oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti
 export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-hard} # hard, rank, position_hard, or position_rank
@@ -154,7 +155,8 @@ mkdir -p "validation_log/$EXPERIMENT_NAME"
 python3 -m verl.trainer.main_ppo_oal_opd \
     algorithm.adv_estimator=$ADV_ESTIMATOR \
     algorithm.grpo_outcome_weight=$GRPO_OUTCOME_WEIGHT \
-    +algorithm.oal_opd.enabled=True \
+    +algorithm.topk_renormalize=$OPD_TOPK_RENORMALIZE \
+    +algorithm.oal_opd.enabled=$OAL_ENABLED \
     +algorithm.oal_opd.margin=$OAL_MARGIN \
     +algorithm.oal_opd.split_mode=$OAL_SPLIT_MODE \
     +algorithm.oal_opd.weight_mode=$OAL_WEIGHT_MODE \
@@ -228,7 +230,7 @@ python3 -m verl.trainer.main_ppo_oal_opd \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=20 \
-    trainer.total_epochs=2 \
+    trainer.total_epochs=1 \
     trainer.default_local_dir="$CKPT_PATH" \
     trainer.is_plot=$IS_PLOT \
     # trainer.total_training_steps=400 \

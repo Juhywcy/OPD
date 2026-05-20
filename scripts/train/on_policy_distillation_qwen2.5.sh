@@ -1,12 +1,13 @@
 #!/bin/bash
 
 set -x
+cd "$(dirname "$0")/../.."
 export TORCH_CUDA_ARCH_LIST="8.0"
 export RAY_memory_usage_threshold=0.99
 export CUDA_LAUNCH_BLOCKING=1
 # export CUDA_VISIBLE_DEVICES=1,2,3,4
 export PYTHONUNBUFFERED=1
-export PROJECT_NAME='OutcomeAlignedLogitOPD' # TODO
+export PROJECT_NAME=${PROJECT_NAME:-OutcomeAlignedLogitOPD}
 export TORCH_NCCL_BLOCKING_WAIT=1
 export NCCL_TIMEOUT=7200
 export TORCH_DISTRIBUTED_DEBUG=INFO
@@ -36,6 +37,10 @@ export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-16} # 0 represents no top-k sampling
 export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" or "intersection" or "union" or "union-intersection"
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
 export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-False}
+export OAL_ENABLED=${OAL_ENABLED:-False}
+export OAL_MARGIN=${OAL_MARGIN:-0.0}
+export OAL_SPLIT_MODE=${OAL_SPLIT_MODE:-oal} # oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti
+export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-hard} # hard, rank, position_hard, or position_rank
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -140,14 +145,21 @@ fi
 PPO_MAX_TOKEN_LEN_PER_GPU=$(( ((1024 + MAX_RESP_LENGTH) > 32768) ? (1024 + MAX_RESP_LENGTH) : 32768))
 echo "PPO_MAX_TOKEN_LEN_PER_GPU: $PPO_MAX_TOKEN_LEN_PER_GPU"
 
+mkdir -p "$CKPT_PATH"
 mkdir -p "$SWANLAB_LOG_DIR"
+mkdir -p "validation_log/$EXPERIMENT_NAME"
 
 
 
-python3 -m verl.trainer.main_ppo \
+python3 -m verl.trainer.main_ppo_oal_opd \
     algorithm.adv_estimator=$ADV_ESTIMATOR \
     algorithm.grpo_outcome_weight=$GRPO_OUTCOME_WEIGHT \
     +algorithm.topk_renormalize=$OPD_TOPK_RENORMALIZE \
+    +algorithm.oal_opd.enabled=$OAL_ENABLED \
+    +algorithm.oal_opd.margin=$OAL_MARGIN \
+    +algorithm.oal_opd.split_mode=$OAL_SPLIT_MODE \
+    +algorithm.oal_opd.weight_mode=$OAL_WEIGHT_MODE \
+    +algorithm.oal_opd.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \
     data.val_files="$TEST_DATASET" \
