@@ -2,9 +2,6 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TRAIN_SCRIPT="${TRAIN_SCRIPT:-$SCRIPT_DIR/run_outcome_aligned_logit_opd.sh}"
-OAL_SPLIT_MODES="${OAL_SPLIT_MODES:-neg_align,neg_anti}"
 GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}"
 MAX_USED_MEM_MB="${MAX_USED_MEM_MB:-7000}"
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-300}"
@@ -14,10 +11,6 @@ if ! command -v nvidia-smi >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ ! -f "$TRAIN_SCRIPT" ]; then
-    echo "Training script not found: $TRAIN_SCRIPT"
-    exit 1
-fi
 
 all_gpu_memory_below_threshold() {
     local gpu_id
@@ -42,14 +35,19 @@ while true; do
     nvidia-smi --id="$GPU_IDS" --query-gpu=index,memory.used,memory.total --format=csv,noheader,nounits
 
     if all_gpu_memory_below_threshold; then
-        echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting OAL split experiments."
-        IFS=',' read -r -a split_mode_array <<< "$OAL_SPLIT_MODES"
-        for split_mode in "${split_mode_array[@]}"; do
-            split_mode="${split_mode//[[:space:]]/}"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Running OAL_SPLIT_MODE=${split_mode}"
-            OAL_SPLIT_MODE="$split_mode" bash "$TRAIN_SCRIPT"
-        done
-        echo "All OAL split experiments finished."
+        echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting OPD and OAL experiments."
+
+        ADV_ESTIMATOR=token_reward_direct \
+        OAL_ENABLED=False \
+            bash scripts/train/run_outcome_aligned_logit_opd_qwen3_0.6B.sh
+
+        ADV_ESTIMATOR=outcome_aligned_logit_opd \
+        OAL_ENABLED=True \
+        OAL_SPLIT_MODE=oal \
+        OAL_WEIGHT_MODE=hard \
+            bash scripts/train/run_outcome_aligned_logit_opd_qwen3_0.6B.sh
+
+        echo "OPD and OAL experiments finished."
         exit 0
     fi
 

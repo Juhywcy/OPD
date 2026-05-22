@@ -25,7 +25,7 @@ export GRPO_OUTCOME_WEIGHT=${GRPO_OUTCOME_WEIGHT:-1.0}
 
 # DeepMath-103K
 export MAX_PROMPT_LENGTH=1024
-export MAX_RESP_LENGTH=8192  # TODO: 31744 /15360 / 7168 / 3072 / 5120
+export MAX_RESP_LENGTH=12288  # TODO: 31744 /15360 / 7168 / 3072 / 5120
 export MAX_VAL_RESP_LENGTH=31744 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
@@ -41,7 +41,6 @@ export OAL_ENABLED=${OAL_ENABLED:-True}
 export OAL_MARGIN=${OAL_MARGIN:-0.0}
 export OAL_SPLIT_MODE=${OAL_SPLIT_MODE:-oal} # oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti
 export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-hard} # hard, rank, position_hard, or position_rank
-export QWEN3_ENABLE_THINKING=${QWEN3_ENABLE_THINKING:-False}
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -89,7 +88,7 @@ TEST_DATASET=${TEST_FILE:-["$TEST_DATA_DIR/AIME25/test.parquet", "$TEST_DATA_DIR
 # export ACTOR_MODEL_PATH=/workspace/model/Qwen3-1.7B-SFT-DAPO-4B
 # export ACTOR_MODEL_PATH=model/Qwen2.5-Math-1.5B
 # export ACTOR_MODEL_PATH=model/DeepSeek-R1-Distill-Qwen-1.5B
-export ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-/root/models/Qwen/Qwen3-1.7B-Base}
+export ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-/root/models/Qwen/Qwen3-1.7B}
 # export ACTOR_MODEL_PATH=model/JustRL-DeepSeek-1.5B-step_0400
 # export ACTOR_MODEL_PATH=model/JustRL-DeepSeek-1.5B
 # export ACTOR_MODEL_PATH=model/Qwen3-1.7B-SFT
@@ -115,7 +114,12 @@ export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
 export PARALLEL_SIZE=1
-export RUN_NAME=${RUN_NAME:-oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}}
+if [ "$ADV_ESTIMATOR" = "token_reward_direct" ]; then
+    DEFAULT_RUN_NAME=OPD_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+else
+    DEFAULT_RUN_NAME=oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+fi
+export RUN_NAME=${RUN_NAME:-$DEFAULT_RUN_NAME}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
 export OUTLINES_CACHE_DIR=~/.cache/outlines/$(uuidgen)
 export NCCL_DEBUG=WARN
@@ -171,7 +175,6 @@ python3 -m verl.trainer.main_ppo_oal_opd \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
-    +data.apply_chat_template_kwargs.enable_thinking=$QWEN3_ENABLE_THINKING \
     actor_rollout_ref.model.path=$ACTOR_MODEL_PATH \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.model.enable_activation_offload=True \
