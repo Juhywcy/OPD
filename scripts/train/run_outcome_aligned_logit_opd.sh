@@ -41,6 +41,7 @@ export OAL_ENABLED=${OAL_ENABLED:-True}
 export OAL_MARGIN=${OAL_MARGIN:-0.0}
 export OAL_SPLIT_MODE=${OAL_SPLIT_MODE:-oal} # oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti
 export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-hard} # hard, rank, position_hard, or position_rank
+export OAL_ANTI_BETA=${OAL_ANTI_BETA:-0.1} # Maximum supervision weight assigned to anti-aligned candidates in rank modes.
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -114,10 +115,14 @@ export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
 export PARALLEL_SIZE=1
+OAL_WEIGHT_SUFFIX=""
+if [ "$OAL_WEIGHT_MODE" = "rank" ] || [ "$OAL_WEIGHT_MODE" = "position_rank" ]; then
+    OAL_WEIGHT_SUFFIX="-beta${OAL_ANTI_BETA}"
+fi
 if [ "$ADV_ESTIMATOR" = "token_reward_direct" ]; then
     DEFAULT_RUN_NAME=OPD_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 else
-    DEFAULT_RUN_NAME=oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}${OAL_WEIGHT_SUFFIX}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 fi
 export RUN_NAME=${RUN_NAME:-$DEFAULT_RUN_NAME}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
@@ -165,6 +170,7 @@ python3 -m verl.trainer.main_ppo_oal_opd \
     +algorithm.oal_opd.margin=$OAL_MARGIN \
     +algorithm.oal_opd.split_mode=$OAL_SPLIT_MODE \
     +algorithm.oal_opd.weight_mode=$OAL_WEIGHT_MODE \
+    +algorithm.oal_opd.anti_beta=$OAL_ANTI_BETA \
     +algorithm.oal_opd.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \

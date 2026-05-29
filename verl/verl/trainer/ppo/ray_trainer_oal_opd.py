@@ -1530,6 +1530,8 @@ class RayPPOTrainer:
                             ).item()
                             metrics["oal/correct_response_ratio"] = batch.batch["oal_correct_mask"].float().mean().item()
                             metrics["oal/outcome_score_mean"] = batch.batch["oal_outcome_scores"].float().mean().item()
+                            if "oal_anti_beta" in batch.batch.keys():
+                                metrics["oal/anti_beta"] = batch.batch["oal_anti_beta"].float().mean().item()
                             split_mode = self.config.algorithm.get("oal_opd", {}).get("split_mode", "oal")
                             weight_mode = self.config.algorithm.get("oal_opd", {}).get("weight_mode", "hard")
                             split_mode_to_id = {
@@ -1543,9 +1545,13 @@ class RayPPOTrainer:
                                 "neg_anti": 6,
                             }
                             metrics["oal/split_mode_id"] = split_mode_to_id.get(split_mode, -1)
-                            metrics["oal/weight_mode_id"] = {"hard": 0, "rank": 1, "position_rank": 2, "position_hard": 3}.get(
-                                weight_mode, -1
-                            )
+                            metrics["oal/weight_mode_id"] = {
+                                "hard": 0,
+                                "rank": 1,
+                                "position_rank": 2,
+                                "position_hard": 3,
+                            }.get(weight_mode, -1)
+                            token_weights = None
                             if "oal_token_weights" in batch.batch.keys():
                                 token_weights = batch.batch["oal_token_weights"].float()
                                 valid_weights = token_weights[candidate_mask > 0]
@@ -1564,6 +1570,19 @@ class RayPPOTrainer:
                                     metrics["oal/position_weight_nonzero_ratio"] = (
                                         valid_position_weights > 0
                                     ).float().mean().item()
+                                if "oal_position_aligned_mask" in batch.batch.keys():
+                                    valid_positions = response_mask.float().sum().clamp_min(1)
+                                    for metric_prefix, position_mask in [
+                                        ("oal/position_align", batch.batch["oal_position_aligned_mask"].float()),
+                                        ("oal/position_anti", batch.batch["oal_position_anti_mask"].float()),
+                                    ]:
+                                        position_count = position_mask.sum().clamp_min(1)
+                                        metrics[f"{metric_prefix}/ratio"] = (
+                                            position_mask.sum() / valid_positions
+                                        ).item()
+                                        metrics[f"{metric_prefix}/weight_mean"] = (
+                                            (position_weights * position_mask).sum() / position_count
+                                        ).item()
                             dense_abs_mass = (token_level_rewards.float().abs() * candidate_mask).sum().clamp_min(1e-6)
                             if "advantages" in batch.batch.keys():
                                 advantages = batch.batch["advantages"].float()
@@ -1618,6 +1637,10 @@ class RayPPOTrainer:
                                 metrics[f"{metric_prefix}/adv_abs_mass_ratio"] = (
                                     (rewards_for_split.abs() * split_mask).sum() / dense_abs_mass
                                 ).item()
+                                if token_weights is not None:
+                                    metrics[f"{metric_prefix}/weight_mean"] = (
+                                        (token_weights * split_mask).sum() / split_count_safe
+                                    ).item()
 
                             if "oal_pos_align_mask" in batch.batch.keys():
                                 _log_oal_split_stats("oal/pos_align", batch.batch["oal_pos_align_mask"])
@@ -2801,6 +2824,8 @@ class RayPPOTrainer:
                         "oal_neg_anti_mask",
                         "oal_token_weights",
                         "oal_position_weights",
+                        "oal_position_aligned_mask",
+                        "oal_position_anti_mask",
                         "logit_delta_scores",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",
