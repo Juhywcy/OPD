@@ -38,13 +38,13 @@ while true; do
         echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting OPD and OAL experiments."
 
         MAX_RESP_LENGTH=12288 \
-        OAL_WEIGHT_MODE=position_rank \
+        OAL_WEIGHT_MODE=rank \
         OAL_SPLIT_MODE=oal \
         OAL_ANTI_BETA=0.5 \
         bash scripts/train/run_outcome_aligned_logit_opd.sh
 
         MAX_RESP_LENGTH=12288 \
-        OAL_WEIGHT_MODE=position_rank \
+        OAL_WEIGHT_MODE=rank \
         OAL_SPLIT_MODE=oal \
         OAL_ANTI_BETA=0.2 \
         bash scripts/train/run_outcome_aligned_logit_opd.sh
