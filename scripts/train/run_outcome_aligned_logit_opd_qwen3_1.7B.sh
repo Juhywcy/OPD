@@ -89,7 +89,7 @@ TEST_DATASET=${TEST_FILE:-["$TEST_DATA_DIR/AIME25/test.parquet", "$TEST_DATA_DIR
 # export ACTOR_MODEL_PATH=/workspace/model/Qwen3-1.7B-SFT-DAPO-4B
 # export ACTOR_MODEL_PATH=model/Qwen2.5-Math-1.5B
 # export ACTOR_MODEL_PATH=model/DeepSeek-R1-Distill-Qwen-1.5B
-export ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-/home/models/Qwen/Qwen3-1.7B}
+export ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-/root/models/Qwen/Qwen3-1.7B}
 # export ACTOR_MODEL_PATH=model/JustRL-DeepSeek-1.5B-step_0400
 # export ACTOR_MODEL_PATH=model/JustRL-DeepSeek-1.5B
 # export ACTOR_MODEL_PATH=model/Qwen3-1.7B-SFT
@@ -110,7 +110,7 @@ export ACTOR_MODEL_NAME=$(basename "$ACTOR_MODEL_PATH")
 # export REWARD_MODEL_PATH=model/Skywork-OR1-Math-7B
 # export REWARD_MODEL_PATH=model/Polaris-4B-Preview
 # export REWARD_MODEL_PATH=model/DeepSeek-R1-Distill-Qwen-14B
-export REWARD_MODEL_PATH=${REWARD_MODEL_PATH:-/home/models/Qwen/Qwen3-4B}
+export REWARD_MODEL_PATH=${REWARD_MODEL_PATH:-/root/models/Qwen/Qwen3-4B}
 export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
