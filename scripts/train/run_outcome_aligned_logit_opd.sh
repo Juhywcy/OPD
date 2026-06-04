@@ -7,7 +7,7 @@ export RAY_memory_usage_threshold=0.99
 export CUDA_LAUNCH_BLOCKING=1
 # export CUDA_VISIBLE_DEVICES=1,2,3,4
 export PYTHONUNBUFFERED=1
-export PROJECT_NAME=${PROJECT_NAME:-OutcomeAlignedLogitOPD}
+export PROJECT_NAME=${PROJECT_NAME:-OALLogitOPD}
 export TORCH_NCCL_BLOCKING_WAIT=1
 export NCCL_TIMEOUT=7200
 export TORCH_DISTRIBUTED_DEBUG=INFO
@@ -28,12 +28,12 @@ export MAX_PROMPT_LENGTH=1024
 export MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-8192}  # TODO: 31744 /15360 / 7168 / 3072 / 5120
 export MAX_VAL_RESP_LENGTH=31744 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
-export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-256} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
+export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
 export TEACHER_TEMPERATURE=${TEACHER_TEMPERATURE:-1.0} # Teacher logits temperature (default 1.0, no scaling)
 export REPETITION_PENALTY=${REPETITION_PENALTY:-1.0} # TODO: 1.0 / 1.1 / 1.2 (default 1.0, no penalty)
 export N_RESPONSES=4 # TODO: 4 / 8 / 16 / 32 (default: 8)
-export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-16} # 0 represents no top-k sampling
+export LOG_PROB_TOP_K=${LOG_PROB_TOP_K:-0} # 0 uses only sampled rollout tokens for OPD
 export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" or "intersection" or "union" or "union-intersection"
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
 export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-True}
@@ -120,9 +120,9 @@ if [ "$OAL_WEIGHT_MODE" = "rank" ] || [ "$OAL_WEIGHT_MODE" = "position_rank" ]; 
     OAL_WEIGHT_SUFFIX="-beta${OAL_ANTI_BETA}"
 fi
 if [ "$ADV_ESTIMATOR" = "token_reward_direct" ]; then
-    DEFAULT_RUN_NAME=OPD_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=OPD_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 else
-    DEFAULT_RUN_NAME=oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_topk${LOG_PROB_TOP_K}-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}${OAL_WEIGHT_SUFFIX}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}${OAL_WEIGHT_SUFFIX}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 fi
 export RUN_NAME=${RUN_NAME:-$DEFAULT_RUN_NAME}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
