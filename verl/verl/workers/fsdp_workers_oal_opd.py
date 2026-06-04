@@ -2719,6 +2719,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
                 
                 reverse_kl = student_logp - teacher_logp
                 rm_scores = -reverse_kl
+                logit_delta_scores = rm_scores
                 
                 teacher_valid_counts = None
                 overlap_mask = None
@@ -2726,6 +2727,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
             tensors = {}
             if rm_scores is not None:
                 tensors["rm_scores"] = rm_scores
+                tensors["logit_delta_scores"] = logit_delta_scores
             
             if teacher_on_student_logp is not None:
                 tensors["teacher_on_student_log_probs"] = teacher_on_student_logp
