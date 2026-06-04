@@ -28,7 +28,7 @@ export MAX_PROMPT_LENGTH=1024
 export MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-8192}  # TODO: 31744 /15360 / 7168 / 3072 / 5120
 export MAX_VAL_RESP_LENGTH=31744 # TODO: 15360 / 7168 / 3072
 export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
-export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
+export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-256} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
 export TEACHER_TEMPERATURE=${TEACHER_TEMPERATURE:-1.0} # Teacher logits temperature (default 1.0, no scaling)
 export REPETITION_PENALTY=${REPETITION_PENALTY:-1.0} # TODO: 1.0 / 1.1 / 1.2 (default 1.0, no penalty)
@@ -175,7 +175,7 @@ python3 -m verl.trainer.main_ppo_oal_opd \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \
     data.val_files="$TEST_DATASET" \
-    data.train_batch_size=$((${MINI_BATCH_SIZE}*${PARALLEL_SIZE})) \
+    data.train_batch_size=$((${MINI_BATCH_SIZE})) \
     data.max_prompt_length=$MAX_PROMPT_LENGTH \
     data.max_response_length=$MAX_RESP_LENGTH \
     data.filter_overlong_prompts=True \
