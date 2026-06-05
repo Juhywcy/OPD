@@ -37,15 +37,15 @@ while true; do
     if all_gpu_memory_below_threshold; then
         echo "All selected GPUs are below ${MAX_USED_MEM_MB} MiB. Starting OPD and OAL experiments."
 
-        ADV_ESTIMATOR=token_reward_direct \
-        OAL_ENABLED=False \
-            bash scripts/train/run_outcome_aligned_logit_opd_qwen3_0.6B.sh
-
         ADV_ESTIMATOR=outcome_aligned_logit_opd \
+        MAX_RESP_LENGTH=12288 \
         OAL_ENABLED=True \
+        OAL_WEIGHT_MODE=rank \
         OAL_SPLIT_MODE=oal \
-        OAL_WEIGHT_MODE=hard \
-            bash scripts/train/run_outcome_aligned_logit_opd_qwen3_0.6B.sh
+        LOG_PROB_TOP_K=0 \
+        MINI_BATCH_SIZE=64 \
+        OAL_ANTI_BETA=0.8 \
+        bash scripts/train/run_outcome_aligned_logit_opd.sh
 
         echo "OPD and OAL experiments finished."
         exit 0
