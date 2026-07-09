@@ -10,7 +10,7 @@ set -x
 #   ACTOR_MODEL_PATH=/path/to/checkpoint bash scripts/val/eval_amc23_olympiad.sh
 #
 # Useful overrides:
-#   N_GPUS=8 N_VAL_RESPONSES=16 MAX_VAL_RESP_LENGTH=24000 \
+#   GPU_IDS=4,5,6,7 N_VAL_RESPONSES=16 MAX_VAL_RESP_LENGTH=24000 \
 #   LOGGER="['console','swanlab']" bash scripts/val/eval_amc23_olympiad.sh
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -52,7 +52,16 @@ PROJECT_NAME=${PROJECT_NAME:-verl-val-math}
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-eval_${ACTOR_MODEL_NAME}_amc23_olympiad_$(date +%Y-%m-%d_%H-%M-%S)}
 VALIDATION_LOG_DIR=${VALIDATION_LOG_DIR:-validation_log}
 
-N_GPUS=${N_GPUS:-8}
+GPU_IDS=${GPU_IDS:-${CUDA_VISIBLE_DEVICES:-}}
+if [ -n "${GPU_IDS}" ]; then
+    export CUDA_VISIBLE_DEVICES="${GPU_IDS}"
+    IFS=',' read -r -a GPU_ID_ARRAY <<< "${GPU_IDS}"
+    DEFAULT_N_GPUS=${#GPU_ID_ARRAY[@]}
+else
+    DEFAULT_N_GPUS=8
+fi
+
+N_GPUS=${N_GPUS:-${DEFAULT_N_GPUS}}
 NNODES=${NNODES:-1}
 PARALLEL_SIZE=${PARALLEL_SIZE:-1}
 ROLLOUT_NAME=${ROLLOUT_NAME:-vllm}
@@ -79,6 +88,8 @@ MODEL_DTYPE=${MODEL_DTYPE:-bfloat16}
 GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.8}
 
 mkdir -p "${VALIDATION_LOG_DIR}/${EXPERIMENT_NAME}"
+echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+echo "trainer.n_gpus_per_node=${N_GPUS}"
 
 if command -v ray >/dev/null 2>&1; then
     ray stop --force || true
