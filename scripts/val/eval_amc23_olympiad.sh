@@ -64,6 +64,17 @@ fi
 N_GPUS=${N_GPUS:-${DEFAULT_N_GPUS}}
 NNODES=${NNODES:-1}
 PARALLEL_SIZE=${PARALLEL_SIZE:-1}
+if (( N_GPUS % PARALLEL_SIZE != 0 )); then
+    echo "ERROR: N_GPUS (${N_GPUS}) must be divisible by PARALLEL_SIZE (${PARALLEL_SIZE})." >&2
+    exit 1
+fi
+DP_SIZE=$((N_GPUS / PARALLEL_SIZE))
+PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE:-${DP_SIZE}}
+if (( PPO_MINI_BATCH_SIZE < DP_SIZE )); then
+    echo "ERROR: PPO_MINI_BATCH_SIZE (${PPO_MINI_BATCH_SIZE}) must be >= DP_SIZE (${DP_SIZE})." >&2
+    echo "verl normalizes it as ppo_mini_batch_size * rollout.n / DP_SIZE during worker init." >&2
+    exit 1
+fi
 ROLLOUT_NAME=${ROLLOUT_NAME:-vllm}
 LOGGER=${LOGGER:-"['console']"}
 
@@ -90,6 +101,7 @@ GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.8}
 mkdir -p "${VALIDATION_LOG_DIR}/${EXPERIMENT_NAME}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "trainer.n_gpus_per_node=${N_GPUS}"
+echo "actor_rollout_ref.actor.ppo_mini_batch_size=${PPO_MINI_BATCH_SIZE}"
 
 if command -v ray >/dev/null 2>&1; then
     ray stop --force || true
@@ -119,7 +131,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.enable_gradient_checkpointing=False \
     actor_rollout_ref.model.enable_activation_offload=False \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size="${TRAIN_BATCH_SIZE}" \
+    actor_rollout_ref.actor.ppo_mini_batch_size="${PPO_MINI_BATCH_SIZE}" \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu="${MAX_NUM_BATCHED_TOKENS}" \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size="${PARALLEL_SIZE}" \
