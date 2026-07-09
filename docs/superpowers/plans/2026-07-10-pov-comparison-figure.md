@@ -33,6 +33,7 @@
 
 ```python
 import importlib.util
+import unittest
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).with_name("make_pov_comparison.py")
@@ -42,19 +43,22 @@ assert spec.loader is not None
 spec.loader.exec_module(figure)
 
 
-def test_final_text_is_at_least_7_5pt():
-    figure.FONT_SIZES_USED.clear()
-    figure.build_content()
-    assert figure.FONT_SIZES_USED
-    assert min(map(figure.effective_font_size, figure.FONT_SIZES_USED)) >= 7.5
+class FigureLayoutTest(unittest.TestCase):
+    def test_final_text_is_at_least_7_5pt(self):
+        figure.FONT_SIZES_USED.clear()
+        figure.build_content()
+        self.assertTrue(figure.FONT_SIZES_USED)
+        self.assertGreaterEqual(
+            min(map(figure.effective_font_size, figure.FONT_SIZES_USED)),
+            7.5,
+        )
 
-
-def test_figure_uses_only_compact_copy():
-    content = figure.build_content()
-    required = ["Sparse outcome reward", "Dense probability reward", "Dense, aligned, prefix-safe"]
-    removed = ["Reward Estimators for On-Policy Reasoning Distillation", "POV advantage:", "prefix drift may be rewarded"]
-    assert all(label in content for label in required)
-    assert all(label not in content for label in removed)
+    def test_figure_uses_only_compact_copy(self):
+        content = figure.build_content()
+        required = ["Sparse outcome reward", "Dense probability reward", "Dense, aligned, prefix-safe"]
+        removed = ["Reward Estimators for On-Policy Reasoning Distillation", "POV advantage:", "prefix drift may be rewarded"]
+        self.assertTrue(all(label in content for label in required))
+        self.assertTrue(all(label not in content for label in removed))
 ```
 
 - [ ] **Step 2: Run the test and verify that the old layout fails**
