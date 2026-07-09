@@ -1,0 +1,46 @@
+This is BibTeX, Version 0.99d (TeX Live 2025)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: anonymous-submission-latex-2026.aux
+The style file: aaai2026.bst
+Database file #1: aaai2026.bib
+You've used 14 entries,
+            2840 wiz_defined-function locations,
+            651 strings with 7534 characters,
+and the built_in function-call counts, 10442 in all, are:
+= -- 711
+> -- 898
+< -- 0
++ -- 332
+- -- 319
+* -- 879
+:= -- 1859
+add.period$ -- 56
+call.type$ -- 14
+change.case$ -- 155
+chr.to.int$ -- 15
+cite$ -- 14
+duplicate$ -- 583
+empty$ -- 481
+format.name$ -- 354
+if$ -- 1864
+int.to.chr$ -- 1
+int.to.str$ -- 1
+missing$ -- 150
+newline$ -- 74
+num.names$ -- 56
+pop$ -- 353
+preamble$ -- 1
+purify$ -- 153
+quote$ -- 0
+skip$ -- 264
+stack$ -- 0
+substring$ -- 179
+swap$ -- 323
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 123
+warning$ -- 0
+while$ -- 58
+width$ -- 0
+write$ -- 172

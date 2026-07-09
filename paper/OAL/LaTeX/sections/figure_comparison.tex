@@ -1,0 +1,6 @@
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/pov_comparison.pdf}
+\caption{Comparison of outcome-only RL, dense OPD, and POV-OPD. GRPO uses final correctness to form a group-relative scalar advantage and broadcasts it to all response tokens. OPD queries the teacher on student-visited prefixes and uses dense teacher-student log-probability gaps directly as token-level supervision. POV-OPD keeps dense OPD supervision but validates it with two signals: outcome validation preserves outcome-aligned token candidates and assigns only beta-capped rank weight to anti-aligned candidates, while prefix validation monitors teacher excess surprisal and decays later supervision after sustained prefix drift.}
+\label{fig:pov_comparison}
+\end{figure*}
