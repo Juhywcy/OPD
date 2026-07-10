@@ -76,7 +76,7 @@ if (( PPO_MINI_BATCH_SIZE < DP_SIZE )); then
     exit 1
 fi
 ROLLOUT_NAME=${ROLLOUT_NAME:-vllm}
-LOGGER=${LOGGER:-"['console']"}
+LOGGER=${LOGGER:-"['console','swanlab']"}
 
 MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-2048}
 MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-8192}
