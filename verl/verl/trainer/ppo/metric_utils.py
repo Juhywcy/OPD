@@ -77,6 +77,17 @@ def _compute_response_info(batch: DataProto) -> dict[str, Any]:
     )
 
 
+def compute_response_token_counts(attention_mask: torch.Tensor, response_width: int) -> torch.Tensor:
+    """Count non-padding tokens in each generated response."""
+    if response_width <= 0:
+        raise ValueError(f"response_width must be positive, got {response_width}")
+    if attention_mask.size(-1) < response_width:
+        raise ValueError(
+            f"attention mask width ({attention_mask.size(-1)}) is smaller than response width ({response_width})"
+        )
+    return attention_mask[:, -response_width:].sum(dim=-1).to(dtype=torch.long)
+
+
 def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str, Any]:
     """
     Computes various metrics from a batch of data for PPO training.

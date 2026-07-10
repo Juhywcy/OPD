@@ -25,6 +25,7 @@ from verl.trainer.ppo.metric_utils import (
     bootstrap_metric,
     calc_maj_val,
     compute_data_metrics,
+    compute_response_token_counts,
     compute_throughout_metrics,
     compute_timing_metrics,
     process_validation_metrics,
@@ -65,6 +66,22 @@ class TestReduceMetrics(unittest.TestCase):
         result = reduce_metrics(metrics)
 
         self.assertEqual(result["single"], 5.0)
+
+
+class TestResponseTokenCounts(unittest.TestCase):
+    """Tests for validation response token accounting."""
+
+    def test_counts_only_valid_response_tokens(self):
+        attention_mask = torch.tensor(
+            [
+                [1, 1, 1, 1, 1, 0, 0],
+                [1, 1, 1, 1, 0, 0, 0],
+            ]
+        )
+
+        counts = compute_response_token_counts(attention_mask, response_width=4)
+
+        self.assertEqual(counts.tolist(), [2, 1])
 
 
 class TestComputeDataMetrics(unittest.TestCase):

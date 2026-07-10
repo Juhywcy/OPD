@@ -5,6 +5,8 @@ set -x
 # Run AMC23 + Olympiad-Bench evaluation through verl's PPO validation engine.
 # The generated answers are dumped by verl itself to:
 #   ${VALIDATION_LOG_DIR}/${EXPERIMENT_NAME}/0.jsonl
+# Each JSONL row includes `response_tokens`; validation logs additionally report
+# per-dataset and all-dataset response token mean/max/min metrics.
 #
 # Example:
 #   ACTOR_MODEL_PATH=/path/to/checkpoint bash scripts/val/eval_amc23_olympiad.sh

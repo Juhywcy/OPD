@@ -45,6 +45,7 @@ from verl.trainer.ppo import core_algos
 from verl.trainer.ppo.core_algos import AdvantageEstimator, agg_loss
 from verl.trainer.ppo.metric_utils import (
     compute_data_metrics,
+    compute_response_token_counts,
     compute_throughout_metrics,
     compute_timing_metrics,
     process_validation_metrics,
@@ -614,6 +615,12 @@ class RayPPOTrainer:
             test_batch = test_batch.union(test_output_gen_batch)
             test_batch.meta_info["validate"] = True
 
+            response_token_counts = compute_response_token_counts(
+                test_batch.batch["attention_mask"],
+                response_width=test_batch.batch["responses"].shape[-1],
+            )
+            reward_extra_infos_dict["response_tokens"].extend(response_token_counts.cpu().tolist())
+
             # evaluate using reward_function
             if self.val_reward_fn is None:
                 raise ValueError("val_reward_fn must be provided for validation.")
@@ -675,6 +682,12 @@ class RayPPOTrainer:
             metric_dict["val-aux/num_turns/min"] = sample_turns.min()
             metric_dict["val-aux/num_turns/max"] = sample_turns.max()
             metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
+
+        response_tokens = reward_extra_infos_dict.get("response_tokens", [])
+        if response_tokens:
+            metric_dict["val-aux/response_tokens/mean"] = float(np.mean(response_tokens))
+            metric_dict["val-aux/response_tokens/max"] = float(np.max(response_tokens))
+            metric_dict["val-aux/response_tokens/min"] = float(np.min(response_tokens))
 
         return metric_dict
 
