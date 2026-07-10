@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  8 JUL 2026 16:15
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  10 JUL 2026 02:37
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -284,11 +284,11 @@ Underfull \hbox (badness 1527) in paragraph at lines 68--70
  []
 
 (./sections/figure_comparison.tex
-<figures/pov_comparison.pdf, id=18, 722.7pt x 321.2pt>
+<figures/pov_comparison.pdf, id=18, 762.85pt x 250.9375pt>
 File: figures/pov_comparison.pdf Graphic file (type pdf)
 <use figures/pov_comparison.pdf>
 Package pdftex.def Info: figures/pov_comparison.pdf  used on input line 3.
-(pdftex.def)             Requested size: 480.59395pt x 213.60022pt.
+(pdftex.def)             Requested size: 505.89pt x 166.41185pt.
 )
 Underfull \hbox (badness 1371) in paragraph at lines 75--76
 \OT1/ptm/m/n/10 Outcome val-i-da-tion checks whether the teacher-student
@@ -305,9 +305,9 @@ Underfull \hbox (badness 2418) in paragraph at lines 121--123
 
 [3]
 
+) (./anonymous-submission-latex-2026.bbl
 
-
-[4 <./figures/pov_comparison.pdf>]) (./anonymous-submission-latex-2026.bbl
+[4 <./figures/pov_comparison.pdf>]
 Underfull \hbox (badness 2608) in paragraph at lines 53--56
 []\OT1/ptm/m/n/10 Page, E. S. 1954.  Con-tin-u-ous In-spec-tion Schemes.
  []
@@ -317,11 +317,13 @@ Underfull \hbox (badness 1838) in paragraph at lines 97--100
 []\OT1/ptm/m/n/10 Zelikman, E.; Wu, Y.; Mu, J.; and Good-man, N. D.
  []
 
-
-
 )
 
-[5] (./anonymous-submission-latex-2026.aux)
+
+
+[5
+
+] (./anonymous-submission-latex-2026.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
@@ -334,7 +336,7 @@ Here is how much of TeX's memory you used:
  27846 multiletter control sequences out of 15000+600000
  576855 words of font info for 69 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 57i,14n,65p,1465b,290s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 57i,14n,65p,1465b,298s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
 ></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb>
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><
@@ -350,7 +352,7 @@ e/2025/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/2025/t
 exmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/texmf-dist/
 fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/fonts/type
 1/urw/times/utmri8a.pfb>
-Output written on anonymous-submission-latex-2026.pdf (5 pages, 197901 bytes).
+Output written on anonymous-submission-latex-2026.pdf (5 pages, 196971 bytes).
 PDF statistics:
  99 PDF objects out of 1000 (max. 8388607)
  60 compressed objects within 1 object stream

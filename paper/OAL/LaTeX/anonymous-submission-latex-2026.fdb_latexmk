@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex anonymous-submission-latex-2026"] 1783498513.05607 "anonymous-submission-latex-2026.aux" "anonymous-submission-latex-2026.bbl" "anonymous-submission-latex-2026" 1783498513.7148 0
+["bibtex anonymous-submission-latex-2026"] 1783622240.14926 "anonymous-submission-latex-2026.aux" "anonymous-submission-latex-2026.bbl" "anonymous-submission-latex-2026" 1783622241.00148 0
   "./aaai2026.bib" 1783498506.23728 4979 9c56865c4102024badbe768240e1f643 ""
   "./aaai2026.bst" 1778808220 30207 6eaa2a4f2eed92c930f9e98d689c010a ""
-  "anonymous-submission-latex-2026.aux" 1783498513.49126 2248 d86acdb34031a5563769f984b2837351 "pdflatex"
+  "anonymous-submission-latex-2026.aux" 1783622240.74937 2248 adb5a70e63ee2507d002c877f7d418d8 "pdflatex"
   (generated)
   "anonymous-submission-latex-2026.bbl"
   "anonymous-submission-latex-2026.blg"
   (rewritten before read)
-["pdflatex"] 1783498513.14251 "/Users/bytedance/Library/CloudStorage/OneDrive-个人/drpaper/OPD/OPD/paper/OAL/LaTeX/anonymous-submission-latex-2026.tex" "anonymous-submission-latex-2026.pdf" "anonymous-submission-latex-2026" 1783498513.71495 0
+["pdflatex"] 1783622240.35049 "/Users/bytedance/Library/CloudStorage/OneDrive-个人/drpaper/OPD/OPD/paper/OAL/LaTeX/anonymous-submission-latex-2026.tex" "anonymous-submission-latex-2026.pdf" "anonymous-submission-latex-2026" 1783622241.00235 0
   "/Users/bytedance/Library/CloudStorage/OneDrive-个人/drpaper/OPD/OPD/paper/OAL/LaTeX/anonymous-submission-latex-2026.tex" 1783498191.30601 1204 28a92cb1d265d40fa0b8866c3a8fd3c7 ""
   "/usr/local/texlive/2025/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/local/texlive/2025/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -86,12 +86,12 @@
   "/usr/local/texlive/2025/texmf-var/web2c/pdftex/pdflatex.fmt" 1782389079 3345732 7f7276c58554628e6225689fce52c08c ""
   "/usr/local/texlive/2025/texmf.cnf" 1741450484 577 418a7058ec8e006d8704f60ecd22c938 ""
   "aaai2026.sty" 1778808220 11802 ebafcca046fa76cd12a651daf05aa669 ""
-  "anonymous-submission-latex-2026.aux" 1783498513.49126 2248 d86acdb34031a5563769f984b2837351 "pdflatex"
-  "anonymous-submission-latex-2026.bbl" 1783498513.13708 4285 65072fb08d40db8025581988611678c4 "bibtex anonymous-submission-latex-2026"
+  "anonymous-submission-latex-2026.aux" 1783622240.74937 2248 adb5a70e63ee2507d002c877f7d418d8 "pdflatex"
+  "anonymous-submission-latex-2026.bbl" 1783622240.34548 4285 65072fb08d40db8025581988611678c4 "bibtex anonymous-submission-latex-2026"
   "anonymous-submission-latex-2026.tex" 1783498191.30601 1204 28a92cb1d265d40fa0b8866c3a8fd3c7 ""
-  "figures/pov_comparison.pdf" 1783498348.01953 7186 b217ffea67277f13b6e36ee33b143ab7 ""
+  "figures/pov_comparison.pdf" 1783622209.20082 6528 d5326abe15a95917cc709ac8a869ab49 ""
   "sections/abstract.tex" 1783498058.2081 1297 bcf21490925114b293c545c976cde22c ""
-  "sections/figure_comparison.tex" 1783498058.57394 775 67c5237314133c78ae21aa56ed8a0115 ""
+  "sections/figure_comparison.tex" 1783622129.5838 487 35b50cfdbf0eccd0bb882c8c22e270cf ""
   "sections/introduction.tex" 1783498058.30503 4881 b04ff5f1e6edfc456e67b66be174854b ""
   "sections/method.tex" 1783498398.74796 9777 43f4fd50d703456c8dce49831fcba4b3 ""
   "sections/related_work.tex" 1783498058.39401 3502 28fc73c470c34d3245fe78087553ac13 ""
