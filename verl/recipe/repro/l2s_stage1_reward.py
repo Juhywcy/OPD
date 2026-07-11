@@ -90,6 +90,11 @@ class L2SStage1RewardManager(AbstractRewardManager):
             valid_response_length = int(attention_mask[prompt_length:].sum().item())
             valid_response_ids = response_ids[:valid_response_length]
 
+            # DeepScaler judges the complete, unstripped sequence: its verifier
+            # needs the ``<think>`` token from the prompt and ``</think>`` from
+            # the response.  This precisely matches the original L2S code.
+            sequences = torch.cat((valid_prompt_ids, valid_response_ids))
+            sequence_str = self.tokenizer.decode(sequences, skip_special_tokens=False)
             prompt_str = self.tokenizer.decode(valid_prompt_ids, skip_special_tokens=True)
             response_str = self.tokenizer.decode(valid_response_ids, skip_special_tokens=True)
 
@@ -102,7 +107,7 @@ class L2SStage1RewardManager(AbstractRewardManager):
 
             result = self.compute_score(
                 data_source=data_source,
-                solution_str=response_str,
+                solution_str=sequence_str,
                 ground_truth=ground_truth,
                 extra_info=extra_info,
             )

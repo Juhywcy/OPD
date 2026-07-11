@@ -62,6 +62,13 @@ class TestL2SStage1(unittest.TestCase):
     def test_known_data_source_is_preserved(self):
         self.assertEqual(self.l2s.normalize_math_data_source("HuggingFaceH4/MATH-500"), "HuggingFaceH4/MATH-500")
 
+    def test_custom_scorer_uses_original_deepscaler_verifier(self):
+        """The custom scorer must use the original prompt-plus-response verifier."""
+        bootstrap_path = Path(__file__).with_name("register_l2s_stage1.py")
+        source = bootstrap_path.read_text(encoding="utf-8")
+        self.assertIn("deepscaler_reward_fn", source)
+        self.assertNotIn("strict_box_verify", source)
+
     def test_terminal_reward_is_placed_only_at_last_valid_token(self):
         row = [0.0] * 6
         self.l2s.place_terminal_reward(row, valid_response_length=4, reward=0.75)

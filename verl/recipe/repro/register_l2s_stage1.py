@@ -16,9 +16,7 @@
 
 import importlib
 
-from verl.utils.reward_score import default_compute_score
-
-from recipe.repro.l2s_stage1 import normalize_math_data_source
+from recipe.repro.l2s_deepscaler_reward import deepscaler_reward_fn
 
 
 importlib.import_module("recipe.repro.l2s_stage1_reward")
@@ -26,11 +24,10 @@ importlib.import_module("recipe.repro.l2s_stage1_advantage")
 
 
 def compute_score(data_source, solution_str, ground_truth, extra_info=None, **kwargs):
-    """Score local math datasets with VERL's built-in math verifiers."""
-    return default_compute_score(
-        data_source=normalize_math_data_source(data_source),
-        solution_str=solution_str,
-        ground_truth=ground_truth,
-        extra_info=extra_info,
-        **kwargs,
-    )
+    """Apply the original DeepScaler/L2S correctness verifier.
+
+    ``data_source`` and ``extra_info`` are accepted for VERL's custom-reward
+    interface but intentionally do not alter the original L2S verifier.
+    """
+    del data_source, extra_info, kwargs
+    return deepscaler_reward_fn(solution_str=solution_str, ground_truth=ground_truth)
