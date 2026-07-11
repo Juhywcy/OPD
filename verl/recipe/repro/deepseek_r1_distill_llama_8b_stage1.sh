@@ -29,7 +29,9 @@ TOTAL_TRAINING_STEPS="${TOTAL_TRAINING_STEPS:-800}"
 
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-1024}"
 MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-4096}"
+MAX_VAL_RESP_LENGTH="${MAX_VAL_RESP_LENGTH:-${MAX_RESPONSE_LENGTH}}"
 MAX_TOKEN_LENGTH=$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))
+MAX_VAL_TOKEN_LENGTH=$((MAX_PROMPT_LENGTH + MAX_VAL_RESP_LENGTH))
 
 TEMPERATURE="${TEMPERATURE:-1.0}"
 TOP_P="${TOP_P:-1.0}"
@@ -45,8 +47,8 @@ PARAM_OFFLOAD="${PARAM_OFFLOAD:-true}"
 OPTIMIZER_OFFLOAD="${OPTIMIZER_OFFLOAD:-true}"
 MODEL_DTYPE="${MODEL_DTYPE:-bf16}"
 
-EVAL_FREQ="${EVAL_FREQ:-50}"
-SAVE_FREQ="${SAVE_FREQ:-50}"
+EVAL_FREQ="${EVAL_FREQ:-20}"
+SAVE_FREQ="${SAVE_FREQ:-400}"
 
 command=(
     python3 -m recipe.repro.main_ppo
@@ -90,8 +92,8 @@ command=(
     "actor_rollout_ref.rollout.dtype=bfloat16"
     "actor_rollout_ref.rollout.gpu_memory_utilization=${GPU_MEMORY_UTILIZATION}"
     "actor_rollout_ref.rollout.enable_chunked_prefill=True"
-    "actor_rollout_ref.rollout.max_num_batched_tokens=${MAX_TOKEN_LENGTH}"
-    "actor_rollout_ref.rollout.max_model_len=${MAX_TOKEN_LENGTH}"
+    "actor_rollout_ref.rollout.max_num_batched_tokens=${MAX_VAL_TOKEN_LENGTH}"
+    "actor_rollout_ref.rollout.max_model_len=${MAX_VAL_TOKEN_LENGTH}"
     "actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True"
     "actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=${MAX_TOKEN_LENGTH}"
     "actor_rollout_ref.rollout.temperature=${TEMPERATURE}"
@@ -102,6 +104,7 @@ command=(
     "actor_rollout_ref.rollout.val_kwargs.top_k=${TOP_K}"
     "actor_rollout_ref.rollout.val_kwargs.do_sample=True"
     "actor_rollout_ref.rollout.val_kwargs.n=1"
+    "+actor_rollout_ref.rollout.val_kwargs.max_tokens=${MAX_VAL_RESP_LENGTH}"
     "reward_model.enable=False"
     "reward_model.reward_manager=l2s_stage1"
     "+reward_model.reward_kwargs.beta=2.0"
@@ -112,7 +115,7 @@ command=(
     "trainer.experiment_name=${RUN_NAME}"
     "trainer.n_gpus_per_node=${N_GPUS_PER_NODE}"
     "trainer.nnodes=${NNODES}"
-    "trainer.val_before_train=False"
+    "trainer.val_before_train=True"
     "trainer.test_freq=${EVAL_FREQ}"
     "trainer.save_freq=${SAVE_FREQ}"
     "trainer.total_epochs=10"
