@@ -69,6 +69,11 @@ class TestL2SStage1(unittest.TestCase):
         self.assertIn("deepscaler_reward_fn", source)
         self.assertNotIn("strict_box_verify", source)
 
+    def test_verifier_never_returns_none_prediction(self):
+        verifier_path = Path(__file__).with_name("l2s_deepscaler_reward.py")
+        source = verifier_path.read_text(encoding="utf-8")
+        self.assertNotIn('"pred": None', source)
+
     def test_terminal_reward_is_placed_only_at_last_valid_token(self):
         row = [0.0] * 6
         self.l2s.place_terminal_reward(row, valid_response_length=4, reward=0.75)

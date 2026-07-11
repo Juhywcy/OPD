@@ -37,12 +37,15 @@ def deepscaler_reward_fn(solution_str: str, ground_truth: Any) -> dict[str, Any]
     extracted prediction, and a reason suitable for reward debugging.
     """
     if THOUGHT_DELIMITER_START not in solution_str or THOUGHT_DELIMITER_END not in solution_str:
-        return {"score": -1.0, "acc": False, "pred": None, "reason": "missing_think_delimiters"}
+        # Validation aggregates every numeric extra and treats strings as
+        # categorical fields.  Use an empty string rather than ``None`` so
+        # malformed responses cannot make metric aggregation crash.
+        return {"score": -1.0, "acc": False, "pred": "", "reason": "missing_think_delimiters"}
 
     model_solution = solution_str.split(THOUGHT_DELIMITER_END, 1)[1]
     model_answer = _extract_answer(model_solution)
     if model_answer is None:
-        return {"score": -1.0, "acc": False, "pred": None, "reason": "missing_boxed_answer"}
+        return {"score": -1.0, "acc": False, "pred": "", "reason": "missing_boxed_answer"}
 
     ground_truths: Sequence[Any]
     if isinstance(ground_truth, (str, int, float)):
