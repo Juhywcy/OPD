@@ -11,6 +11,7 @@ import json
 import math
 import os
 import re
+import statistics
 from pathlib import Path
 from typing import Any, Optional
 
@@ -20,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", required=True, help="Local/HF model path.")
     parser.add_argument("--data", required=True, help="VERL-format parquet file.")
     parser.add_argument("--batch-size", type=int, default=4, help="Number of prompts.")
+    parser.add_argument("--num-batches", type=int, default=8, help="Independent sampled batches to measure.")
     parser.add_argument("--num-responses", type=int, default=1, help="Samples per prompt.")
     parser.add_argument("--max-prompt-length", type=int, default=1024)
     parser.add_argument("--max-new-tokens", type=int, default=4096)
@@ -158,10 +160,110 @@ def _gradient_cosine(loss_a, loss_b, parameters, chunk_size: int, distributed: b
     return float(cosine.cpu()), float(norm_a.cpu()), float(norm_b.cpu()), used_numel
 
 
+def _run_one_batch(args, model, tokenizer, dataset, batch_index, local_batch_size, device, dtype, distributed, rank, world_size):
+    """Sample and measure one global batch; only rank zero returns its record."""
+    import torch
+    import torch.distributed as dist
+
+    torch.manual_seed(args.seed + batch_index * 1009 + rank)
+    global_start = batch_index * args.batch_size
+    local_start = global_start + rank * local_batch_size
+    rows = [dataset[i] for i in range(local_start, local_start + local_batch_size)]
+    prompt_texts = [_format_prompt(tokenizer, row["prompt"]) for row in rows]
+    encoded = tokenizer(
+        prompt_texts,
+        padding=True,
+        truncation=True,
+        max_length=args.max_prompt_length,
+        return_tensors="pt",
+    ).to(device)
+    prompt_width = encoded.input_ids.shape[1]
+
+    model.eval()
+    with torch.inference_mode():
+        sequences = model.generate(
+            **encoded,
+            do_sample=True,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_new_tokens=args.max_new_tokens,
+            num_return_sequences=args.num_responses,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+    sequences = sequences.clone()
+    model.train()
+
+    response_ids = sequences[:, prompt_width:]
+    response_mask = _response_mask(response_ids, tokenizer.eos_token_id, tokenizer.pad_token_id)
+    response_lengths = response_mask.sum(dim=-1)
+    decoded_responses = tokenizer.batch_decode(response_ids, skip_special_tokens=True)
+    repeated_rows = [row for row in rows for _ in range(args.num_responses)]
+    correctness = torch.tensor(
+        [
+            float(_is_correct(text, _ground_truth(row), str(row.get("data_source", "math_dapo"))))
+            for text, row in zip(decoded_responses, repeated_rows, strict=True)
+        ],
+        device=device,
+        dtype=torch.float32,
+    )
+    length_rewards = -response_lengths.to(dtype=torch.float32)
+    accuracy_advantages = _advantages(correctness, args.advantage_mode).to(dtype=dtype)
+    length_advantages = _advantages(length_rewards, args.advantage_mode).to(dtype=dtype)
+
+    repeated_input_ids = encoded.input_ids.repeat_interleave(args.num_responses, dim=0)
+    repeated_attention = encoded.attention_mask.repeat_interleave(args.num_responses, dim=0)
+    full_input_ids = torch.cat((repeated_input_ids, response_ids), dim=-1)
+    full_attention = torch.cat((repeated_attention, response_mask.to(repeated_attention.dtype)), dim=-1)
+    position_ids = full_attention.long().cumsum(dim=-1) - 1
+    position_ids.masked_fill_(full_attention.eq(0), 0)
+    logits = model(
+        input_ids=full_input_ids,
+        attention_mask=full_attention,
+        position_ids=position_ids,
+        use_cache=False,
+    ).logits
+    response_logits = logits[:, prompt_width - 1 : prompt_width - 1 + response_ids.shape[1], :]
+    action_log_probs = response_logits.log_softmax(dim=-1).gather(-1, response_ids.unsqueeze(-1)).squeeze(-1)
+    accuracy_loss = _reinforce_loss(action_log_probs, response_mask, accuracy_advantages, args.loss_aggregation)
+    length_loss = _reinforce_loss(action_log_probs, response_mask, length_advantages, args.loss_aggregation)
+    pattern = re.compile(args.gradient_parameter_regex)
+    parameters = [param for name, param in model.named_parameters() if param.requires_grad and pattern.search(name)]
+    cosine, accuracy_norm, length_norm, parameter_numel = _gradient_cosine(
+        accuracy_loss, length_loss, parameters, args.gradient_chunk_size, distributed, rank
+    )
+
+    local_per_response = [
+        {"correctness_reward": int(correct), "length_reward": -int(length), "response_length": int(length)}
+        for correct, length in zip(correctness.cpu().tolist(), response_lengths.cpu().tolist(), strict=True)
+    ]
+    if distributed:
+        gathered_per_response = [None] * world_size if rank == 0 else None
+        dist.gather_object(local_per_response, gathered_per_response, dst=0)
+        if rank != 0:
+            return None
+        per_response = [item for shard in gathered_per_response for item in shard]
+    else:
+        per_response = local_per_response
+    return {
+        "batch_index": batch_index,
+        "gradient_cosine_similarity": cosine,
+        "cosine_defined": cosine is not None,
+        "accuracy_gradient_norm": accuracy_norm,
+        "length_gradient_norm": length_norm,
+        "gradient_parameter_numel": parameter_numel,
+        "num_correct": sum(item["correctness_reward"] for item in per_response),
+        "accuracy_reward_mean": sum(item["correctness_reward"] for item in per_response) / len(per_response),
+        "length_reward_mean": sum(item["length_reward"] for item in per_response) / len(per_response),
+        "response_length_mean": sum(item["response_length"] for item in per_response) / len(per_response),
+        "per_response": per_response,
+    }
+
+
 def main() -> None:
     args = build_parser().parse_args()
-    if args.batch_size <= 0 or args.num_responses <= 0 or args.gradient_chunk_size <= 0:
-        raise ValueError("batch-size, num-responses, and gradient-chunk-size must be positive")
+    if args.batch_size <= 0 or args.num_batches <= 0 or args.num_responses <= 0 or args.gradient_chunk_size <= 0:
+        raise ValueError("batch-size, num-batches, num-responses, and gradient-chunk-size must be positive")
 
     import torch
     import torch.distributed as dist
@@ -203,115 +305,44 @@ def main() -> None:
             f"Global batch-size ({args.batch_size}) must be divisible by world-size ({world_size})."
         )
     local_batch_size = args.batch_size // world_size
-    if len(dataset) < args.batch_size:
-        raise ValueError(f"Dataset has {len(dataset)} rows, smaller than batch-size={args.batch_size}")
-    start = rank * local_batch_size
-    rows = [dataset[i] for i in range(start, start + local_batch_size)]
-    prompt_texts = [_format_prompt(tokenizer, row["prompt"]) for row in rows]
-    encoded = tokenizer(
-        prompt_texts,
-        padding=True,
-        truncation=True,
-        max_length=args.max_prompt_length,
-        return_tensors="pt",
-    ).to(device)
-    prompt_width = encoded.input_ids.shape[1]
+    required_rows = args.batch_size * args.num_batches
+    if len(dataset) < required_rows:
+        raise ValueError(f"Dataset has {len(dataset)} rows, but {required_rows} are needed for this run")
 
-    model.eval()
-    with torch.inference_mode():
-        sequences = model.generate(
-            **encoded,
-            do_sample=True,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            max_new_tokens=args.max_new_tokens,
-            num_return_sequences=args.num_responses,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
+    batch_records = []
+    for batch_index in range(args.num_batches):
+        record = _run_one_batch(
+            args, model, tokenizer, dataset, batch_index, local_batch_size, device, dtype, distributed, rank, world_size
         )
-    # ``inference_mode`` returns inference tensors, which cannot be saved by
-    # autograd when they later index ``gather`` in the log-prob replay.
-    # Materialize a normal tensor after leaving that context.
-    sequences = sequences.clone()
-    model.train()
+        if rank == 0:
+            batch_records.append(record)
+            status = "undefined" if record["gradient_cosine_similarity"] is None else f"{record['gradient_cosine_similarity']:.6f}"
+            print(f"[gradient-cosine] batch={batch_index} cosine={status}", flush=True)
+        # Every local autograd graph is released before sampling the next batch.
+        torch.cuda.empty_cache()
 
-    response_ids = sequences[:, prompt_width:]
-    response_mask = _response_mask(response_ids, tokenizer.eos_token_id, tokenizer.pad_token_id)
-    response_lengths = response_mask.sum(dim=-1)
-    decoded_responses = tokenizer.batch_decode(response_ids, skip_special_tokens=True)
-
-    repeated_rows = [row for row in rows for _ in range(args.num_responses)]
-    correctness = torch.tensor(
-        [
-            float(_is_correct(text, _ground_truth(row), str(row.get("data_source", "math_dapo"))))
-            for text, row in zip(decoded_responses, repeated_rows, strict=True)
-        ],
-        device=device,
-        dtype=torch.float32,
-    )
-    length_rewards = -response_lengths.to(dtype=torch.float32)
-    accuracy_advantages = _advantages(correctness, args.advantage_mode).to(dtype=dtype)
-    length_advantages = _advantages(length_rewards, args.advantage_mode).to(dtype=dtype)
-
-    repeated_input_ids = encoded.input_ids.repeat_interleave(args.num_responses, dim=0)
-    repeated_attention = encoded.attention_mask.repeat_interleave(args.num_responses, dim=0)
-    full_input_ids = torch.cat((repeated_input_ids, response_ids), dim=-1)
-    full_attention = torch.cat((repeated_attention, response_mask.to(repeated_attention.dtype)), dim=-1)
-    # Reconstruct the left-padding-aware positions used during generation.
-    position_ids = full_attention.long().cumsum(dim=-1) - 1
-    position_ids.masked_fill_(full_attention.eq(0), 0)
-    logits = model(
-        input_ids=full_input_ids,
-        attention_mask=full_attention,
-        position_ids=position_ids,
-        use_cache=False,
-    ).logits
-    response_logits = logits[:, prompt_width - 1 : prompt_width - 1 + response_ids.shape[1], :]
-    action_log_probs = response_logits.log_softmax(dim=-1).gather(-1, response_ids.unsqueeze(-1)).squeeze(-1)
-
-    accuracy_loss = _reinforce_loss(action_log_probs, response_mask, accuracy_advantages, args.loss_aggregation)
-    length_loss = _reinforce_loss(action_log_probs, response_mask, length_advantages, args.loss_aggregation)
-    pattern = re.compile(args.gradient_parameter_regex)
-    parameters = [param for name, param in model.named_parameters() if param.requires_grad and pattern.search(name)]
-    cosine, accuracy_norm, length_norm, parameter_numel = _gradient_cosine(
-        accuracy_loss, length_loss, parameters, args.gradient_chunk_size, distributed, rank
-    )
-
-    local_per_response = [
-        {
-            "correctness_reward": int(correct),
-            "length_reward": -int(length),
-            "response_length": int(length),
-        }
-        for correct, length in zip(correctness.cpu().tolist(), response_lengths.cpu().tolist(), strict=True)
-    ]
-    if distributed:
-        gathered_per_response = [None] * world_size if rank == 0 else None
-        dist.gather_object(local_per_response, gathered_per_response, dst=0)
-        if rank != 0:
+    if rank != 0:
+        if distributed:
             dist.destroy_process_group()
-            return
-        per_response = [item for shard in gathered_per_response for item in shard]
-    else:
-        per_response = local_per_response
+        return
 
+    valid_cosines = [record["gradient_cosine_similarity"] for record in batch_records if record["cosine_defined"]]
     result = {
-        "gradient_cosine_similarity": cosine,
-        "cosine_defined": cosine is not None,
-        "accuracy_gradient_norm": accuracy_norm,
-        "length_gradient_norm": length_norm,
-        "gradient_parameter_numel": parameter_numel,
+        "gradient_cosine_similarity": {
+            "mean": statistics.mean(valid_cosines) if valid_cosines else None,
+            "std": statistics.stdev(valid_cosines) if len(valid_cosines) > 1 else 0.0 if valid_cosines else None,
+            "min": min(valid_cosines) if valid_cosines else None,
+            "max": max(valid_cosines) if valid_cosines else None,
+            "valid_batches": len(valid_cosines),
+            "total_batches": args.num_batches,
+        },
         "batch_prompts": args.batch_size,
         "world_size": world_size,
-        "responses": len(per_response),
-        "num_correct": sum(item["correctness_reward"] for item in per_response),
-        "accuracy_reward_mean": sum(item["correctness_reward"] for item in per_response) / len(per_response),
-        "length_reward_mean": sum(item["length_reward"] for item in per_response) / len(per_response),
-        "response_length_mean": sum(item["response_length"] for item in per_response) / len(per_response),
+        "num_responses": args.num_responses,
         "advantage_mode": args.advantage_mode,
         "loss_aggregation": args.loss_aggregation,
         "gradient_parameter_regex": args.gradient_parameter_regex,
-        "per_response": per_response,
+        "batches": batch_records,
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if args.output:

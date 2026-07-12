@@ -15,6 +15,7 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4,5,6,7}"
 MODEL_PATH="${MODEL_PATH:-/root/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B}"
 DATA_FILE="${DATA_FILE:-${WORKSPACE_ROOT}/datasets/test_data/DeepScaler/train.parquet}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
+NUM_BATCHES="${NUM_BATCHES:-8}"
 N_RESPONSES="${N_RESPONSES:-1}"
 MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-1024}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-4096}"
@@ -35,6 +36,7 @@ exec torchrun --standalone --nproc_per_node="${NPROC_PER_NODE}" -m recipe.repro.
   --model "${MODEL_PATH}" \
   --data "${DATA_FILE}" \
   --batch-size "${BATCH_SIZE}" \
+  --num-batches "${NUM_BATCHES}" \
   --num-responses "${N_RESPONSES}" \
   --max-prompt-length "${MAX_PROMPT_LENGTH}" \
   --max-new-tokens "${MAX_NEW_TOKENS}" \
