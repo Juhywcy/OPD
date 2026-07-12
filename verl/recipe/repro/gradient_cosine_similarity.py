@@ -190,7 +190,10 @@ def main() -> None:
     ).to(device)
     # This is a backward-pass diagnostic; recomputing activations is much
     # cheaper than retaining them for long sampled trajectories.
-    model.gradient_checkpointing_enable()
+    # ``autograd.grad`` is required for chunked exact cosine calculation.
+    # PyTorch's legacy reentrant checkpoint implementation rejects that API,
+    # so select the non-reentrant implementation explicitly.
+    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.config.use_cache = False
     model.train()
 
