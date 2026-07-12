@@ -9,6 +9,10 @@ VERL_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKSPACE_ROOT="$(cd "${VERL_ROOT}/.." && pwd)"
 cd "${VERL_ROOT}"
 
+# This diagnostic is single-process, so logical cuda:0 is physical GPU 4.
+# The remaining visible cards are reserved for a future distributed variant.
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4,5,6,7}"
+
 MODEL_PATH="${MODEL_PATH:-/root/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B}"
 DATA_FILE="${DATA_FILE:-${WORKSPACE_ROOT}/datasets/test_data/DeepScaler/train.parquet}"
 BATCH_SIZE="${BATCH_SIZE:-4}"
