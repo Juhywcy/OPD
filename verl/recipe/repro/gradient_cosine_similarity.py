@@ -9,6 +9,7 @@ the cosine similarity of their gradients.  It never calls ``optimizer.step``.
 import argparse
 import json
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any, Optional
@@ -107,9 +108,10 @@ def _reinforce_loss(action_log_probs, response_mask, advantages, aggregation: st
     return -(advantages.unsqueeze(-1) * weighted_logp).sum() / response_mask.sum().clamp_min(1)
 
 
-def _gradient_cosine(loss_a, loss_b, parameters, chunk_size: int):
+def _gradient_cosine(loss_a, loss_b, parameters, chunk_size: int, distributed: bool, rank: int):
     """Compute an exact global cosine without retaining two full gradient copies."""
     import torch
+    import torch.distributed as dist
 
     dot = torch.zeros((), device=loss_a.device, dtype=torch.float64)
     norm_a_sq = torch.zeros_like(dot)
@@ -131,6 +133,14 @@ def _gradient_cosine(loss_a, loss_b, parameters, chunk_size: int):
         for grad_a, grad_b in zip(grads_a, grads_b, strict=True):
             if grad_a is None or grad_b is None:
                 continue
+            # Each rank owns a different prompt shard.  Sum the two local
+            # gradients parameter-wise to obtain the exact global-batch
+            # gradients before taking their dot product.
+            if distributed:
+                dist.all_reduce(grad_a, op=dist.ReduceOp.SUM)
+                dist.all_reduce(grad_b, op=dist.ReduceOp.SUM)
+            if rank != 0:
+                continue
             a = grad_a.detach().to(dtype=torch.float64)
             b = grad_b.detach().to(dtype=torch.float64)
             dot += (a * b).sum()
@@ -138,6 +148,8 @@ def _gradient_cosine(loss_a, loss_b, parameters, chunk_size: int):
             norm_b_sq += (b * b).sum()
             used_numel += a.numel()
 
+    if rank != 0:
+        return None, None, None, 0
     norm_a = norm_a_sq.sqrt()
     norm_b = norm_b_sq.sqrt()
     if bool((norm_a == 0).item()) or bool((norm_b == 0).item()):
@@ -152,13 +164,21 @@ def main() -> None:
         raise ValueError("batch-size, num-responses, and gradient-chunk-size must be positive")
 
     import torch
+    import torch.distributed as dist
     from datasets import load_dataset
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    torch.manual_seed(args.seed)
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    distributed = world_size > 1
+    if distributed:
+        dist.init_process_group(backend="nccl")
+    torch.manual_seed(args.seed + rank)
     if not torch.cuda.is_available():
         raise RuntimeError("This diagnostic requires one CUDA GPU.")
-    device = torch.device("cuda")
+    torch.cuda.set_device(local_rank)
+    device = torch.device("cuda", local_rank)
     dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float32
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
@@ -168,12 +188,22 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(
         args.model, torch_dtype=dtype, trust_remote_code=True
     ).to(device)
+    # This is a backward-pass diagnostic; recomputing activations is much
+    # cheaper than retaining them for long sampled trajectories.
+    model.gradient_checkpointing_enable()
+    model.config.use_cache = False
     model.train()
 
     dataset = load_dataset("parquet", data_files=str(Path(args.data)), split="train")
+    if args.batch_size % world_size != 0:
+        raise ValueError(
+            f"Global batch-size ({args.batch_size}) must be divisible by world-size ({world_size})."
+        )
+    local_batch_size = args.batch_size // world_size
     if len(dataset) < args.batch_size:
         raise ValueError(f"Dataset has {len(dataset)} rows, smaller than batch-size={args.batch_size}")
-    rows = [dataset[i] for i in range(args.batch_size)]
+    start = rank * local_batch_size
+    rows = [dataset[i] for i in range(start, start + local_batch_size)]
     prompt_texts = [_format_prompt(tokenizer, row["prompt"]) for row in rows]
     encoded = tokenizer(
         prompt_texts,
@@ -241,8 +271,26 @@ def main() -> None:
     pattern = re.compile(args.gradient_parameter_regex)
     parameters = [param for name, param in model.named_parameters() if param.requires_grad and pattern.search(name)]
     cosine, accuracy_norm, length_norm, parameter_numel = _gradient_cosine(
-        accuracy_loss, length_loss, parameters, args.gradient_chunk_size
+        accuracy_loss, length_loss, parameters, args.gradient_chunk_size, distributed, rank
     )
+
+    local_per_response = [
+        {
+            "correctness_reward": int(correct),
+            "length_reward": -int(length),
+            "response_length": int(length),
+        }
+        for correct, length in zip(correctness.cpu().tolist(), response_lengths.cpu().tolist(), strict=True)
+    ]
+    if distributed:
+        gathered_per_response = [None] * world_size if rank == 0 else None
+        dist.gather_object(local_per_response, gathered_per_response, dst=0)
+        if rank != 0:
+            dist.destroy_process_group()
+            return
+        per_response = [item for shard in gathered_per_response for item in shard]
+    else:
+        per_response = local_per_response
 
     result = {
         "gradient_cosine_similarity": cosine,
@@ -251,27 +299,23 @@ def main() -> None:
         "length_gradient_norm": length_norm,
         "gradient_parameter_numel": parameter_numel,
         "batch_prompts": args.batch_size,
-        "responses": len(decoded_responses),
-        "num_correct": int(correctness.sum().item()),
-        "accuracy_reward_mean": float(correctness.mean().item()),
-        "length_reward_mean": float(length_rewards.mean().item()),
-        "response_length_mean": float(response_lengths.float().mean().item()),
+        "world_size": world_size,
+        "responses": len(per_response),
+        "num_correct": sum(item["correctness_reward"] for item in per_response),
+        "accuracy_reward_mean": sum(item["correctness_reward"] for item in per_response) / len(per_response),
+        "length_reward_mean": sum(item["length_reward"] for item in per_response) / len(per_response),
+        "response_length_mean": sum(item["response_length"] for item in per_response) / len(per_response),
         "advantage_mode": args.advantage_mode,
         "loss_aggregation": args.loss_aggregation,
         "gradient_parameter_regex": args.gradient_parameter_regex,
-        "per_response": [
-            {
-                "correctness_reward": int(correct),
-                "length_reward": -int(length),
-                "response_length": int(length),
-            }
-            for correct, length in zip(correctness.cpu().tolist(), response_lengths.cpu().tolist(), strict=True)
-        ],
+        "per_response": per_response,
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     if args.output:
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if distributed:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

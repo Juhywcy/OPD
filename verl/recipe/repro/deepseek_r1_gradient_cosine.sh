@@ -9,8 +9,7 @@ VERL_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKSPACE_ROOT="$(cd "${VERL_ROOT}/.." && pwd)"
 cd "${VERL_ROOT}"
 
-# This diagnostic is single-process, so logical cuda:0 is physical GPU 4.
-# The remaining visible cards are reserved for a future distributed variant.
+# Four data-parallel diagnostic workers, mapped to physical GPUs 4--7.
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-4,5,6,7}"
 
 MODEL_PATH="${MODEL_PATH:-/root/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B}"
@@ -21,12 +20,18 @@ MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-1024}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-4096}"
 ADVANTAGE_MODE="${ADVANTAGE_MODE:-raw}"
 LOSS_AGGREGATION="${LOSS_AGGREGATION:-sequence-mean}"
-# Full 8B gradients can be expensive. Set GRADIENT_PARAMETER_REGEX=lm_head for
-# a quick directional probe, or leave .* for the exact full-model cosine.
+# Full-model gradients can be expensive. Set GRADIENT_PARAMETER_REGEX=lm_head
+# for a quick directional probe, or leave .* for the exact full-model cosine.
 GRADIENT_PARAMETER_REGEX="${GRADIENT_PARAMETER_REGEX:-.*}"
 GRADIENT_CHUNK_SIZE="${GRADIENT_CHUNK_SIZE:-64}"
 
-exec python3 -m recipe.repro.gradient_cosine_similarity \
+NPROC_PER_NODE="${NPROC_PER_NODE:-4}"
+if (( BATCH_SIZE % NPROC_PER_NODE != 0 )); then
+  echo "BATCH_SIZE (${BATCH_SIZE}) must be divisible by NPROC_PER_NODE (${NPROC_PER_NODE})." >&2
+  exit 2
+fi
+
+exec torchrun --standalone --nproc_per_node="${NPROC_PER_NODE}" -m recipe.repro.gradient_cosine_similarity \
   --model "${MODEL_PATH}" \
   --data "${DATA_FILE}" \
   --batch-size "${BATCH_SIZE}" \
