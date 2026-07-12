@@ -1,0 +1,67 @@
++ echo ==========================================
+==========================================
++ echo 'Log file: logs/val/eval_amc23_olympiad_20260712_204158.log'
+Log file: logs/val/eval_amc23_olympiad_20260712_204158.log
+++ date
++ echo 'Start time: Sun Jul 12 20:41:58 CST 2026'
+Start time: Sun Jul 12 20:41:58 CST 2026
++ echo ==========================================
+==========================================
++ export PYTHONUNBUFFERED=1
++ PYTHONUNBUFFERED=1
++ export TOKENIZERS_PARALLELISM=true
++ TOKENIZERS_PARALLELISM=true
++ export NCCL_DEBUG=WARN
++ NCCL_DEBUG=WARN
++ export HYDRA_FULL_ERROR=1
++ HYDRA_FULL_ERROR=1
++ export RAY_memory_usage_threshold=0.99
++ RAY_memory_usage_threshold=0.99
++ TEST_DATA_DIR=datasets/test_data
++ TEST_DATASET='['\''custom.parquet'\'']'
++ DUMMY_TRAIN_FILE=datasets/test_data/AMC23/test.parquet
++ ACTOR_MODEL_PATH=/tmp/model
++ '[' -z /tmp/model ']'
+++ basename /tmp/model
++ ACTOR_MODEL_NAME=model
++ PROJECT_NAME=verl-val-math
++ EXPERIMENT_NAME=eval_model_amc23_olympiad_aime24_math_2026-07-12_20-41-58
++ VALIDATION_LOG_DIR=validation_log
++ GPU_IDS=
++ '[' -n '' ']'
++ DEFAULT_N_GPUS=8
++ N_GPUS=8
++ NNODES=1
++ PARALLEL_SIZE=1
++ ((  N_GPUS % PARALLEL_SIZE != 0  ))
++ DP_SIZE=8
++ PPO_MINI_BATCH_SIZE=8
++ ((  PPO_MINI_BATCH_SIZE < DP_SIZE  ))
++ ROLLOUT_NAME=vllm
++ LOGGER='['\''console'\'','\''swanlab'\'']'
++ MAX_PROMPT_LENGTH=2048
++ MAX_RESP_LENGTH=8192
++ MAX_VAL_RESP_LENGTH=24000
++ MAX_MODEL_LEN=26048
++ MAX_NUM_BATCHED_TOKENS=26048
++ TRAIN_BATCH_SIZE=1
++ VAL_BATCH_SIZE=32
++ VAL_MAX_SAMPLES=-1
++ N_VAL_RESPONSES=1
++ VAL_TEMPERATURE=0.7
++ VAL_TOP_P=0.95
++ VAL_DO_SAMPLE=True
++ ENABLE_THINKING=False
++ TRUST_REMOTE_CODE=True
++ MODEL_DTYPE=bfloat16
++ GPU_MEMORY_UTILIZATION=0.8
++ mkdir -p validation_log/eval_model_amc23_olympiad_aime24_math_2026-07-12_20-41-58
++ echo CUDA_VISIBLE_DEVICES=unset
+CUDA_VISIBLE_DEVICES=unset
++ echo trainer.n_gpus_per_node=8
+trainer.n_gpus_per_node=8
++ echo actor_rollout_ref.actor.ppo_mini_batch_size=8
+actor_rollout_ref.actor.ppo_mini_batch_size=8
++ command -v ray
++ python3 -m verl.trainer.main_ppo algorithm.adv_estimator=grpo data.shuffle=False data.validation_shuffle=False data.train_files=datasets/test_data/AMC23/test.parquet 'data.val_files=['\''custom.parquet'\'']' data.train_batch_size=1 data.val_batch_size=32 data.max_prompt_length=2048 data.max_response_length=8192 data.val_max_samples=-1 data.filter_overlong_prompts=True data.truncation=error data.return_raw_chat=True data.trust_remote_code=True +data.apply_chat_template_kwargs.enable_thinking=False actor_rollout_ref.model.path=/tmp/model actor_rollout_ref.model.trust_remote_code=True actor_rollout_ref.model.use_remove_padding=True actor_rollout_ref.model.enable_gradient_checkpointing=False actor_rollout_ref.model.enable_activation_offload=False actor_rollout_ref.actor.use_dynamic_bsz=True actor_rollout_ref.actor.ppo_mini_batch_size=8 actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 actor_rollout_ref.actor.ppo_max_token_len_per_gpu=26048 actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 actor_rollout_ref.actor.fsdp_config.param_offload=False actor_rollout_ref.actor.fsdp_config.optimizer_offload=False actor_rollout_ref.actor.fsdp_config.model_dtype=bfloat16 actor_rollout_ref.rollout.name=vllm actor_rollout_ref.rollout.dtype=bfloat16 actor_rollout_ref.rollout.tensor_model_parallel_size=1 actor_rollout_ref.rollout.gpu_memory_utilization=0.8 actor_rollout_ref.rollout.max_model_len=26048 actor_rollout_ref.rollout.max_num_batched_tokens=26048 actor_rollout_ref.rollout.temperature=0.7 actor_rollout_ref.rollout.top_p=0.95 actor_rollout_ref.rollout.n=1 actor_rollout_ref.rollout.calculate_log_probs=False actor_rollout_ref.rollout.val_kwargs.do_sample=True actor_rollout_ref.rollout.val_kwargs.n=1 actor_rollout_ref.rollout.val_kwargs.temperature=0.7 actor_rollout_ref.rollout.val_kwargs.top_p=0.95 +actor_rollout_ref.rollout.val_kwargs.max_tokens=24000 critic.enable=False reward_model.enable=False custom_reward_function.path=verl/verl/utils/reward_score/ttrl_math/__init__.py custom_reward_function.name=reward_func trainer.val_before_train=True trainer.val_only=True trainer.log_val_generations=0 'trainer.logger=['\''console'\'','\''swanlab'\'']' trainer.project_name=verl-val-math trainer.experiment_name=eval_model_amc23_olympiad_aime24_math_2026-07-12_20-41-58 trainer.validation_data_dir=validation_log/eval_model_amc23_olympiad_aime24_math_2026-07-12_20-41-58 trainer.n_gpus_per_node=8 trainer.nnodes=1 trainer.save_freq=-1 trainer.test_freq=-1 trainer.total_epochs=1 trainer.default_local_dir=checkpoints/verl-val-math/eval_model_amc23_olympiad_aime24_math_2026-07-12_20-41-58
+/Library/Developer/CommandLineTools/usr/bin/python3: Error while finding module specification for 'verl.trainer.main_ppo' (ModuleNotFoundError: No module named 'verl.trainer')
