@@ -196,6 +196,10 @@ def main() -> None:
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id,
         )
+    # ``inference_mode`` returns inference tensors, which cannot be saved by
+    # autograd when they later index ``gather`` in the log-prob replay.
+    # Materialize a normal tensor after leaving that context.
+    sequences = sequences.clone()
     model.train()
 
     response_ids = sequences[:, prompt_width:]
