@@ -1,0 +1,26 @@
+\subsection{Component Ablation and Gradient Audit}
+\label{sec:gradient-audit}
+
+Panels~(b)--(d) of Table~\ref{tab:main-results} use DeepSeek-R1-Distill-Qwen-1.5B as the student and JustRL-1.5B as the teacher.  The component ablation changes only the validation weights.  Outcome-only disables prefix weighting and sets $\alpha=0$; prefix-only retains every raw OPD token, applies only $w^{\mathrm{pre}}$, and also sets $\alpha=0$; outcome+prefix keeps both validation weights but omits the support boost.  The final two rows therefore isolate the effect of $w^{\mathrm{sup}}$.  Macro Avg@8 and Best@8 give equal weight to each of the six benchmarks in the main evaluation.
+
+\paragraph{Gradient protocol.}
+At each pre-specified frozen student checkpoint, we use the same held-out prompts to sample two independent response groups, $A_j$ and $B_j$.  Method gradients are computed on $A_j$, while $B_j$ supplies an independent outcome-policy-gradient reference $g^{\mathrm{out}}_{j,B}$.  Outcome-PG on $A_j$ measures the agreement between two independent outcome estimators.  All advantages and validation weights are detached, and every objective uses the same trainable parameters, token masking, and loss normalization.  We first define one common audit set $\mathcal J=\{j:\lVert g^{\mathrm{out}}_{j,B}\rVert_2\geq\epsilon_{\mathrm{ref}}\}$ using only the reference norm, and use this set for every method.  For $X\in\{\mathrm{out},\mathrm{OPD},\mathrm{POV}\}$, let $\mathcal J_X\subseteq\mathcal J$ contain batches whose candidate gradient also exceeds a pre-specified numerical threshold.  We report
+\begin{equation}
+\begin{aligned}
+c_j^X&=\frac{\langle g^X_{j,A},g^{\mathrm{out}}_{j,B}\rangle}
+{\lVert g^X_{j,A}\rVert_2\lVert g^{\mathrm{out}}_{j,B}\rVert_2},\\
+p_-^X&=\frac{1}{|\mathcal J_X|}\sum_{j\in\mathcal J_X}{\bf1}[c_j^X<0],
+&z_0^X&=1-\frac{|\mathcal J_X|}{|\mathcal J|}.
+\end{aligned}
+\label{eq:gradient-audit}
+\end{equation}
+Cosine is averaged over $\mathcal J_X$ per audit batch rather than computed after averaging gradients.  Near-zero candidate gradients are not silently discarded: their rate $z_0^X$ is reported, while the common reference-valid count is $|\mathcal J|=\AuditN$.  We also report the batch-wise mean of $\lVert g^X_{j,A}\rVert/(\lVert g^{\mathrm{out}}_{j,B}\rVert+\epsilon)$ over all $j\in\mathcal J$, including candidate zeros, so that an apparent alignment gain cannot be attributed merely to shrinking the update toward zero.
+
+\paragraph{Component effects.}
+Outcome validation changes Macro Avg@8 from \AblOPDAvg{} to \AblOutcomeAvg{}, while prefix validation alone obtains \AblPrefixAvg{}.  Combining them yields \AblOutcomePrefixAvg{}, and adding teacher-supported boosting gives \AblFullAvg{}.  These comparisons respectively test outcome correction, prefix correction, their complementarity, and the incremental value of support; a component is treated as beneficial only when its gain exceeds the evaluation uncertainty.
+
+\paragraph{Overall gradient correction.}
+Against the independent outcome reference, raw OPD obtains cosine \(\AuditRawCos\) with \(\AuditRawNeg\%\) negative-cosine batches, whereas POV-OPD obtains \(\AuditPOVCos\) with \(\AuditPOVNeg\%\).  The corresponding relative norms are \(\AuditRawNorm\) and \(\AuditPOVNorm\).  This audit measures agreement with an outcome-based optimization direction, not access to a ground-truth token gradient; it is therefore interpreted as a mechanism check rather than a proof of token correctness.
+
+\paragraph{Before and after the detected horizon.}
+For a window $W_{i,b}$, define its raw OPD update as $g^{\mathrm{OPD}}_{i,b}=|W_{i,b}|^{-1}\sum_{t\in W_{i,b}}D_{i,t}\nabla_\theta\log\pi_\theta(y_{i,t}\mid h_{i,t})$.  It is conflicting iff $\langle g^{\mathrm{OPD}}_{i,b},g^{\mathrm{out}}_{j,B}\rangle<0$.  Panel (d) reports the equal-window mean of the corresponding cosines, separately before $b^\star$ and over the trigger window and all later windows.  Each triggered trajectory is matched to an untriggered rollout of the same prompt and outcome class with similar length; the control uses a pseudo-boundary at the same normalized position.  CUSUM triggers on \(\HorizonTriggerRate\%\) of audited trajectories, leaving \(\HorizonMatchedPairs\) matched pairs.  In triggered trajectories, the conflict rate changes from \(\HorizonTriggeredConflictPre\%\) before $b^\star$ to \(\HorizonTriggeredConflictPost\%\) after it, compared with \(\HorizonControlConflictPre\%\) to \(\HorizonControlConflictPost\%\) for the position-matched control.  The difference-in-differences is \(\HorizonConflictDID\) percentage points.  Evidence for localization requires this value to be positive with a 95\% confidence interval excluding zero and a larger post-horizon cosine deterioration than in the matched control.  Because prefix weights are positive constants within each window, they cannot alter that window's direction, conflict indicator, or cosine.  Panel (d) therefore tests whether $b^\star$ localizes raw OPD regions that are less outcome-compatible on average; the method attenuates the mass assigned to those post-horizon regions, while aggregate gradient correction is tested separately in panel (c).

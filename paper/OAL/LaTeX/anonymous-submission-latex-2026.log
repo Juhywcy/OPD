@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  10 JUL 2026 02:37
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  18 JUL 2026 01:50
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -254,60 +254,97 @@ Underfull \hbox (badness 1946) in paragraph at lines 18--19
 
 ) (./sections/related_work.tex
 
-) (./sections/method.tex
-LaTeX Font Info:    Trying to load font information for U+msa on input line 6.
+) (./sections/theoretical_motivation.tex
+LaTeX Font Info:    Trying to load font information for U+msa on input line 7.
 
 (/usr/local/texlive/2025/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 6.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 7.
 
 (/usr/local/texlive/2025/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 3
-4.
-
-(/usr/local/texlive/2025/texmf-dist/tex/latex/psnfss/ot1pcr.fd
-File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
-)
 
 [2]
-Underfull \hbox (badness 1052) in paragraph at lines 57--58
-[]\OT1/ptm/m/n/10 OPD takes the op-po-site ap-proach. It pro-vides dense
+Underfull \hbox (badness 1028) in paragraph at lines 38--39
+\OT1/ptm/m/n/10 pro-vid-ing an outcome-conflicting lo-cal pref-er-ence on a
+ []
+
+) (./sections/method.tex
+Underfull \hbox (badness 5077) in paragraph at lines 51--1
+\OT1/ptm/m/n/10 The two propo-si-tions ex-pose a com-ple-men-tary gap.
  []
 
 
-Underfull \hbox (badness 1527) in paragraph at lines 68--70
-\OT1/ptm/m/n/10 prefix-validation weight, and $\OML/cmm/m/it/10 b$ \OT1/ptm/m/n
-/10 is an aligned-candidate
+
+
+Underfull \hbox (badness 1281) in paragraph at lines 6--7
+\OT1/ptm/m/n/10 Let $\OML/cmm/m/it/10 x$ \OT1/ptm/m/n/10 be a prompt, $\OML/cmm
+/m/it/10 ^^Y[]$ \OT1/ptm/m/n/10 the stu-dent pol-icy, and $\OML/cmm/m/it/10 ^^Y
+[]$ \OT1/ptm/m/n/10 a
  []
 
 (./sections/figure_comparison.tex
-<figures/pov_comparison.pdf, id=18, 762.85pt x 250.9375pt>
+<figures/pov_comparison.pdf, id=18, 516.14934pt x 301.33075pt>
 File: figures/pov_comparison.pdf Graphic file (type pdf)
 <use figures/pov_comparison.pdf>
 Package pdftex.def Info: figures/pov_comparison.pdf  used on input line 3.
-(pdftex.def)             Requested size: 505.89pt x 166.41185pt.
-)
-Underfull \hbox (badness 1371) in paragraph at lines 75--76
-\OT1/ptm/m/n/10 Outcome val-i-da-tion checks whether the teacher-student
+(pdftex.def)             Requested size: 505.89pt x 295.35268pt.
+
+
+[3])
+
+
+Underfull \hbox (badness 1377) in paragraph at lines 128--129
+\OT1/ptm/m/n/10 Among outcome-aligned can-di-dates, POV-OPD gives a
  []
 
 
 
+[4]) (./sections/experiments.tex (./sections/experiment_values.tex)
 
-Underfull \hbox (badness 2418) in paragraph at lines 121--123
-\OT1/ptm/m/n/10 This dif-fers from glob-ally reweight-ing all can-di-dates:
+(./sections/results_table.tex)
+Underfull \hbox (badness 2744) in paragraph at lines 11--12
+\OT1/ptm/m/n/10 from JustRL-1.5B; (3) DeepSeek-R1-Distill-Qwen-1.5B
+ []
+
+
+Underfull \hbox (badness 1968) in paragraph at lines 11--12
+\OT1/ptm/m/n/10 R1-Distill-Qwen-7B dis-tilled from Skywork-OR1-Math-
  []
 
 
 
-[3]
+[5 <./figures/pov_comparison.pdf>]
+Underfull \hbox (badness 1859) in paragraph at lines 14--15
+\OT1/ptm/m/n/10 AMC23 (AMC), AIME 2024 (AIME24), AIME 2025
+ []
 
-) (./anonymous-submission-latex-2026.bbl
 
-[4 <./figures/pov_comparison.pdf>]
+Underfull \hbox (badness 1990) in paragraph at lines 21--22
+\OT1/ptm/m/n/10 POV-OPD is a con-sis-tent im-prove-ment over OPD on
+ []
+
+
+
+(./sections/gradient_experiments.tex
+
+[6]))
+Underfull \hbox (badness 1635) in paragraph at lines 26--45
+ \OT1/ptm/b/n/10 Be-fore and af-ter the de-tected hori-zon. \OT1/ptm/m/n/10 For
+ a win-
+ []
+
+
+Underfull \hbox (badness 2600) in paragraph at lines 26--45
+\OT1/ptm/m/n/10 dow $\OML/cmm/m/it/10 W[]$\OT1/ptm/m/n/10 , de-fine its raw OPD
+ up-date as $\OML/cmm/m/it/10 g[] \OT1/cmr/m/n/10 =
+ []
+
+
+
+(./anonymous-submission-latex-2026.bbl
 Underfull \hbox (badness 2608) in paragraph at lines 53--56
 []\OT1/ptm/m/n/10 Page, E. S. 1954.  Con-tin-u-ous In-spec-tion Schemes.
  []
@@ -319,43 +356,53 @@ Underfull \hbox (badness 1838) in paragraph at lines 97--100
 
 )
 
-
-
-[5
-
-] (./anonymous-submission-latex-2026.aux)
+[7] (./anonymous-submission-latex-2026.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 4652 strings out of 473190
- 75600 string characters out of 5715800
- 478855 words of memory out of 5000000
- 27846 multiletter control sequences out of 15000+600000
- 576855 words of font info for 69 fonts, out of 8000000 for 9000
+ 4744 strings out of 473190
+ 77820 string characters out of 5715800
+ 499280 words of memory out of 5000000
+ 27916 multiletter control sequences out of 15000+600000
+ 585406 words of font info for 88 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 57i,14n,65p,1465b,298s stack positions out of 10000i,1000n,20000p,200000b,200000s
-</usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmbx10.pfb
-></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb>
-</usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb><
-/usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></u
-sr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi7.pfb></usr
-/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb></usr/l
-ocal/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb></usr/loca
-l/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr/local/t
-exlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/te
-xlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/local/texl
+ 57i,17n,65p,1872b,420s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</usr/local/texlive/2025/texmf-dist/fonts/type1/public/fontawesome5/FontAweso
+me5Free-Solid.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfon
+ts/cm/cmbx10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfont
+s/cm/cmbx7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/
+cm/cmex10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/c
+mextra/cmex7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfont
+s/cm/cmmi10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts
+/cm/cmmi5.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/c
+m/cmmi6.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/
+cmmi7.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cm
+mi8.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi
+9.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.
+pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb
+></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr6.pfb></
+usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb></usr
+/local/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/lo
+cal/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/local
+/texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/local/
+texlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/local/te
+xlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></usr/local/texl
 ive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/local/texliv
-e/2025/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/local/texlive/2025/t
-exmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/texmf-dist/
-fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-dist/fonts/type
-1/urw/times/utmri8a.pfb>
-Output written on anonymous-submission-latex-2026.pdf (5 pages, 196971 bytes).
+e/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></usr/local/texlive/
+2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texlive/20
+25/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/local/texliv
+e/2025/texmf-dist/fonts/type1/public/amsfonts/symbols/msam7.pfb></usr/local/tex
+live/2025/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local
+/texlive/2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2
+025/texmf-dist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-
+dist/fonts/type1/urw/times/utmri8a.pfb>
+Output written on anonymous-submission-latex-2026.pdf (7 pages, 407719 bytes).
 PDF statistics:
- 99 PDF objects out of 1000 (max. 8388607)
- 60 compressed objects within 1 object stream
+ 248 PDF objects out of 1000 (max. 8388607)
+ 168 compressed objects within 2 object streams
  0 named destinations out of 1000 (max. 500000)
  6 words of extra memory for PDF output out of 10000 (max. 10000000)
 

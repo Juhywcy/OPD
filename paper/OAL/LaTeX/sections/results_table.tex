@@ -1,0 +1,88 @@
+\begin{table*}[t]
+\centering
+\small
+\caption{Main results and compact mechanism audit. Panel (a) compares four student--teacher configurations; entries are percentages. Panels (b)--(d) use DeepSeek-R1-Distill-Qwen-1.5B with JustRL-1.5B. O/P/S denote outcome validation, prefix validation, and teacher-supported boosting. Panel (c) compares gradients on rollout set $A$ with an independent outcome-gradient reference from rollout set $B$ on the same prompts. ``Neg.'' and ``Zero'' denote negative-cosine and near-zero candidate-gradient rates, respectively.}
+\label{tab:main-results}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llcccccccccccc}
+\hline
+\textbf{Student / Teacher} & \textbf{Method} & \multicolumn{2}{c}{\textbf{AMC}} & \multicolumn{2}{c}{\textbf{AIME24}} & \multicolumn{2}{c}{\textbf{AIME25}} & \multicolumn{2}{c}{\textbf{MATH}} & \multicolumn{2}{c}{\textbf{GPQA}} & \multicolumn{2}{c}{\textbf{Minerva}} \\
+\cline{3-14}
+& & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 \\
+\hline
+Qwen3-1.7B / Qwen3-4B-T
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\hline
+DS-R1-Qwen-1.5B / JustRL-1.5B
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\hline
+DS-R1-Qwen-1.5B / Skywork-OR1-7B
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\hline
+DS-R1-Qwen-7B / Skywork-OR1-7B
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\hline
+\end{tabular}%
+}
+\vspace{4pt}
+
+\begin{minipage}[t]{0.44\textwidth}
+\centering
+\textbf{(b) Component ablation}\\[-2pt]
+\scriptsize
+\setlength{\tabcolsep}{2.8pt}
+\renewcommand{\arraystretch}{0.92}
+\begin{tabular}{@{}lccccc@{}}
+\hline
+\textbf{Variant} & \textbf{O} & \textbf{P} & \textbf{S} & \textbf{Macro Avg@8} & \textbf{Macro Best@8} \\
+\hline
+OPD & -- & -- & -- & \AblOPDAvg & \AblOPDBest \\
+$+$ Outcome & $\checkmark$ & -- & -- & \AblOutcomeAvg & \AblOutcomeBest \\
+$+$ Prefix & -- & $\checkmark$ & -- & \AblPrefixAvg & \AblPrefixBest \\
+$+$ Outcome $+$ Prefix & $\checkmark$ & $\checkmark$ & -- & \AblOutcomePrefixAvg & \AblOutcomePrefixBest \\
+\textbf{POV-OPD} & $\checkmark$ & $\checkmark$ & $\checkmark$ & \AblFullAvg & \AblFullBest \\
+\hline
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.54\textwidth}
+\centering
+\textbf{(c) Independent-reference gradient audit}\\[-2pt]
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
+\renewcommand{\arraystretch}{0.92}
+\begin{tabular}{@{}lcccc@{}}
+\hline
+\textbf{Signal on $A$} & \textbf{Cosine $\uparrow$} & \textbf{Neg. (\%) $\downarrow$} & \textbf{Zero (\%) $\downarrow$} & \textbf{Rel. norm} \\
+\hline
+Outcome-PG & $\AuditOutcomeCos$ & $\AuditOutcomeNeg$ & $\AuditOutcomeZero$ & $\AuditOutcomeNorm$ \\
+Raw OPD & $\AuditRawCos$ & $\AuditRawNeg$ & $\AuditRawZero$ & $\AuditRawNorm$ \\
+\textbf{POV-OPD} & $\AuditPOVCos$ & $\AuditPOVNeg$ & $\AuditPOVZero$ & $\AuditPOVNorm$ \\
+\hline
+\end{tabular}
+\end{minipage}
+
+\vspace{4pt}
+\begin{minipage}[t]{0.94\textwidth}
+\centering
+\textbf{(d) Does $b^\star$ identify less outcome-compatible OPD gradients?}\\[-2pt]
+\scriptsize
+\setlength{\tabcolsep}{5.0pt}
+\renewcommand{\arraystretch}{0.92}
+\begin{tabular}{@{}lccccc@{}}
+\hline
+\textbf{Group} & \textbf{Conflict pre (\%)} & \textbf{Conflict post (\%)} & \textbf{$\Delta$ (pp)} & \textbf{Mean cos. pre} & \textbf{Mean cos. post} \\
+\hline
+Triggered & $\HorizonTriggeredConflictPre$ & $\HorizonTriggeredConflictPost$ & $\HorizonTriggeredConflictDelta$ & $\HorizonTriggeredCosPre$ & $\HorizonTriggeredCosPost$ \\
+Position-matched control & $\HorizonControlConflictPre$ & $\HorizonControlConflictPost$ & $\HorizonControlConflictDelta$ & $\HorizonControlCosPre$ & $\HorizonControlCosPost$ \\
+\hline
+\end{tabular}
+\end{minipage}
+\end{table*}

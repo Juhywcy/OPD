@@ -1,0 +1,23 @@
+\section{Experiments}
+\input{sections/experiment_values}
+
+We evaluate whether prefix--outcome validation corrects unreliable token-level OPD gradients and thereby improves on-policy distillation for reasoning. We compare \textbf{POV-OPD} with two complementary baselines: \textbf{GRPO}, which uses only sparse verifier feedback, and \textbf{OPD}, which uses dense teacher--student logit differences without outcome or prefix validation. We conduct experiments under four student--teacher configurations, spanning different model families and capacity gaps. Within each configuration, all methods use the same student initialization, training data, rollout budget, and optimization hyperparameters whenever applicable. Thus, the comparison isolates the contribution of validating dense teacher supervision.
+
+\input{sections/results_table}
+
+\subsection{Experimental Setup}
+
+\paragraph{Training.}
+We train on DAPO-Math-17K and consider four configurations: (1) Qwen3-1.7B distilled from Qwen3-4B Thinking; (2) DeepSeek-R1-Distill-Qwen-1.5B distilled from JustRL-1.5B; (3) DeepSeek-R1-Distill-Qwen-1.5B distilled from Skywork-OR1-Math-7B; and (4) DeepSeek-R1-Distill-Qwen-7B distilled from Skywork-OR1-Math-7B. For each prompt, the student samples on-policy responses and is evaluated by a rule-based mathematical verifier. GRPO uses the resulting outcome reward to construct group-relative advantages. OPD uses the teacher--student log-probability gap as a dense token-level signal. POV-OPD uses the same dense OPD signal, but outcome validation distinguishes outcome-aligned from anti-aligned teacher preferences and prefix validation attenuates supervision after sustained teacher-surprisal drift. In each configuration, GRPO uses the same student initialization but does not query the teacher; the listed teacher is used only by OPD and POV-OPD.
+
+\paragraph{Evaluation.}
+We evaluate on six reasoning benchmarks: AMC23 (AMC), AIME 2024 (AIME24), AIME 2025 (AIME25), MATH-500 (MATH), GPQA, and Minerva. For each problem, we independently sample eight responses from the evaluated policy. \emph{Avg@8} is the mean correctness over the eight samples, whereas \emph{Best@8} reports whether at least one of the eight samples is correct, averaged over problems. Higher values are better for both metrics. We use the same decoding budget, prompt template, and rule-based answer verifier for all compared methods within each benchmark.
+
+\subsection{Main Results}
+
+Table~\ref{tab:main-results}(a) reports the main comparison across all four student--teacher configurations. The table jointly measures average reasoning reliability and the benefit of repeated sampling. Avg@8 measures the quality of a typical sampled response, while Best@8 measures the attainable performance when a small response budget is available. We report both because a method can improve the best sampled trajectory while degrading the average trajectory quality, which would be undesirable for practical reasoning systems.
+
+\paragraph{Reading the comparison.}
+The most direct evidence for POV-OPD is a consistent improvement over OPD on Avg@8: this would show that validating dense supervision improves the quality of typical on-policy trajectories rather than merely increasing sampling variance. Gains on Best@8 additionally indicate that the method preserves or improves exploration of successful solution paths. In contrast, a gain over GRPO demonstrates the value of dense teacher guidance beyond sparse outcome feedback. We further analyze how outcome and prefix validation reshape unreliable OPD gradients and isolate the contribution of each component in the following ablations.
+
+\input{sections/gradient_experiments}

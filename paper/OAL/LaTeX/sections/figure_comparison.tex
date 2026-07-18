@@ -1,6 +1,6 @@
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{figures/pov_comparison.pdf}
-\caption{Reward estimators for the same student trajectory. GRPO provides only a terminal $0/1$ outcome reward, whereas OPD derives dense token rewards from teacher--student probability differences. POV-OPD retains this dense signal while adding outcome validation and prefix-window gating, producing outcome-aligned, prefix-constrained token rewards.}
+\caption{Credit assignment on the same student rollout. GRPO group-normalizes the terminal verifier reward and broadcasts one scalar within each trajectory, whereas OPD provides signed dense teacher--student gaps without validating them. POV-OPD turns the terminal result into a local outcome-validity weight, detects sustained prefix drift from windowed teacher excess surprisal using CUSUM, and boosts only aligned candidates that remain well supported by the teacher. The sampled-token example at the bottom shows how the three nonnegative weights preserve, remove, cap, or decay each dense OPD signal without reversing its sign.}
 \label{fig:pov_comparison}
 \end{figure*}

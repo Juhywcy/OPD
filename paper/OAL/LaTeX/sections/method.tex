@@ -3,251 +3,157 @@
 
 \subsection{Problem Setup}
 
-Let $x$ be a prompt, $\pi_\theta$ be the student policy, and $\pi_T$ be a fixed teacher policy. The student samples a response
-$y_i=(y_{i,1},\ldots,y_{i,T_i}) \sim \pi_\theta(\cdot \mid x)$.
-For each response position $t$, we consider a candidate set
-${\cal C}_{i,t}=\{a_{i,t,k}\}_{k=1}^{K}$. In the sampled-token setting, $K=1$ and $a_{i,t,1}=y_{i,t}$. In the top-$K$ setting, candidates may come from the student distribution, the teacher distribution, or their union.
-
-On-policy distillation computes teacher and student log-probabilities on the same student-visited prefix:
+Let $x$ be a prompt, $\pi_\theta$ the student policy, and $\pi_T$ a fixed teacher policy. The student samples a response $y_i=(y_{i,1},\ldots,y_{i,T_i})$. At each response position $t$, we score a candidate set ${\cal C}_{i,t}=\{a_{i,t,k}\}_{k=1}^{K}$ on the student-visited prefix $(x,y_{i,<t})$. The sampled-token setting has $K=1$ and $a_{i,t,1}=y_{i,t}$; in the top-$K$ setting, candidates may come from the student, the teacher, or their union. We collect the quantities used throughout the method as
 \begin{equation}
 \begin{aligned}
-\ell^T_{i,t,k} =
-\log \pi_T(a_{i,t,k}\mid x,y_{i,<t}),\\
-\ell^\theta_{i,t,k} =
-\log \pi_\theta(a_{i,t,k}\mid x,y_{i,<t}).
+y_i&\sim\pi_\theta(\cdot\mid x),\\
+\ell^T_{i,t,k}&=\log\pi_T(a_{i,t,k}\mid x,y_{i,<t}),\\
+\ell^\theta_{i,t,k}&=\log\pi_\theta(a_{i,t,k}\mid x,y_{i,<t}),\\
+\delta_{i,t,k}&=\ell^T_{i,t,k}-\ell^\theta_{i,t,k},
+&D_{i,t,k}&=\rho_{i,t,k}\delta_{i,t,k},\\
+c_i&={\bf 1}[R_i>1/2],
+&z_i&=2c_i-1,
 \end{aligned}
+\label{eq:basic-signals}
 \end{equation}
-The basic teacher-student log-probability gap is
-\begin{equation}
-\delta_{i,t,k} =
-\ell^T_{i,t,k} - \ell^\theta_{i,t,k}.
-\end{equation}
-The dense OPD advantage can be written as
-\begin{equation}
-D_{i,t,k} = \rho_{i,t,k}\delta_{i,t,k},
-\end{equation}
-where $\rho_{i,t,k}$ is an optional candidate weight. For sampled-token OPD, $\rho_{i,t,k}=1$. Standard dense OPD directly uses
-\begin{equation}
-A^{\mathrm{OPD}}_{i,t,k}=D_{i,t,k}.
-\end{equation}
+where $R_i$ is the verifier outcome and $\rho_{i,t,k}$ is an optional candidate weight; sampled-token OPD uses $\rho_{i,t,k}=1$. Standard OPD directly treats $D_{i,t,k}$ as a dense advantage. The signed label $z_i$ equals $1$ for a correct response and $-1$ for an incorrect response.
 
-Each sampled response also receives an outcome score $R_i$, provided by the task verifier. In our implementation this is the field \texttt{true\_reward\_score}. We convert it to a binary correctness label
-\begin{equation}
-c_i = {\bf 1}[R_i > 1/2],
-\end{equation}
-and a signed outcome label
-\begin{equation}
-z_i = 2c_i - 1.
-\end{equation}
-Thus $z_i=1$ for a correct response and $z_i=-1$ for an incorrect response.
+\subsection{From GRPO and OPD to POV-OPD}
 
-\subsection{GRPO, OPD, and POV-OPD}
-
-Figure~\ref{fig:pov_comparison} summarizes the difference between outcome-only RL, dense OPD, and POV-OPD. GRPO uses only the final outcome. Given a group of responses sampled for the same prompt, it computes a relative outcome advantage, for example
+Figure~\ref{fig:pov_comparison} summarizes the three reward constructions. Given a group of responses to the same prompt, GRPO normalizes the terminal reward and broadcasts one trajectory-level advantage to every valid response token:
 \begin{equation}
-\hat R_i =
-\frac{R_i-\mu(x_i)}{\sigma(x_i)+\epsilon},
+A^{\mathrm{GRPO}}_{i,t}
+=\frac{R_i-\mu(x_i)}{\sigma(x_i)+\epsilon},
+\qquad 1\leq t\leq T_i,
+\label{eq:grpo-advantage}
 \end{equation}
-where $\mu(x_i)$ and $\sigma(x_i)$ are computed over responses to the same prompt. This scalar advantage is then broadcast to all response tokens:
-\begin{equation}
-A^{\mathrm{GRPO}}_{i,t} = \hat R_i.
-\end{equation}
-GRPO therefore gives reliable trajectory-level feedback, but it does not distinguish which local token decisions were useful.
+where $\mu(x_i)$ and $\sigma(x_i)$ are computed within the response group. GRPO therefore provides reliable but coarse outcome feedback. OPD instead provides the dense signal $D_{i,t,k}$, but does not verify whether each local teacher preference agrees with the final result or remains reliable on the student-generated prefix.
 
-OPD takes the opposite approach. It provides dense token-level teacher guidance on the student trajectory, but it does not check whether a local teacher preference is consistent with the final outcome. POV-OPD combines the two views. It keeps the dense OPD advantage $D_{i,t,k}$, but multiplies it by validation weights derived from the final outcome and from teacher prefix statistics:
+POV-OPD retains the dense OPD signal and calibrates it using outcome consistency, prefix reliability, and teacher support:
 \begin{equation}
 A^{\mathrm{POV}}_{i,t,k}
-=
-D_{i,t,k}
-\cdot
-w^{\mathrm{out}}_{i,t,k}
-\cdot
-w^{\mathrm{pre}}_{i,t}
-\cdot
-b_{i,t,k}.
+=D_{i,t,k}\,
+w^{\mathrm{out}}_{i,t,k}\,
+w^{\mathrm{pre}}_{i,t}\,
+w^{\mathrm{sup}}_{i,t,k}.
+\label{eq:pov-advantage}
 \end{equation}
-Here $w^{\mathrm{out}}$ is the outcome-validation weight, $w^{\mathrm{pre}}$ is the prefix-validation weight, and $b$ is an aligned-candidate boost.
+Here $w^{\mathrm{out}}$ validates the direction of local supervision against the final outcome, $w^{\mathrm{pre}}$ attenuates supervision after sustained prefix drift, and $w^{\mathrm{sup}}$ mildly boosts aligned candidates that remain well supported by the teacher.
 
 \input{sections/figure_comparison}
 
+The worked example at the bottom of Figure~\ref{fig:pov_comparison} uses the sampled-token setting adopted in our main experiments. It makes the calibration explicit: aligned dense credit is preserved and may be boosted, ambiguous credit is removed, anti-aligned credit is capped by $\beta q$, and credit after detected prefix drift is monotonically attenuated. The terminal outcome is therefore not added as a separate GRPO advantage and never reverses the sign of $D_{i,t,k}$; it only determines nonnegative validation weights.
+
 \subsection{Outcome Validation}
 
-Outcome validation checks whether the teacher-student preference points in the direction suggested by the final outcome. We use the alignment score
+Outcome validation signs each teacher--student gap by the trajectory result. We directly define the signed alignment score and its aligned and anti-aligned sets as
 \begin{equation}
-g_{i,t,k}=\delta_{i,t,k},
+\begin{aligned}
+s_{i,t,k}&=z_i\delta_{i,t,k},\\
+{\cal A}_i&=\{(t,k):s_{i,t,k}>m\},\\
+{\cal B}_i&=\{(t,k):s_{i,t,k}<-m\},
+\end{aligned}
+\label{eq:outcome-sets}
 \end{equation}
-and define the signed alignment score
-\begin{equation}
-s_{i,t,k}=z_i g_{i,t,k}.
-\end{equation}
-For a correct response, $z_i=1$, so a candidate is aligned when the teacher assigns it higher log-probability than the student. For an incorrect response, $z_i=-1$, so a candidate is aligned when the teacher assigns it lower log-probability than the student. With margin $m \geq 0$, the aligned and anti-aligned sets are
-\begin{equation}
-{\cal A}_i=\{(t,k):s_{i,t,k}>m\},
-\quad
-{\cal B}_i=\{(t,k):s_{i,t,k}<-m\}.
-\end{equation}
-Candidates with $|s_{i,t,k}|\leq m$ are treated as ambiguous.
+where $m\geq0$ is a tolerance margin and candidates with $|s_{i,t,k}|\leq m$ are ambiguous. On a correct trajectory, a positive score means that the teacher assigns the candidate higher probability than the student. On an incorrect trajectory, the sign is reversed, so teacher preferences that would reinforce the failed behavior are treated as conflicting evidence.
 
-The hard outcome-validation weight keeps only aligned candidates:
+A hard filter retains only ${\cal A}_i$, but may be brittle when either the verifier or a local teacher preference is noisy. We therefore retain aligned candidates fully and assign bounded rank weights only within the anti-aligned set. Let $n_i=|{\cal B}_i|$ and rank anti-aligned scores in ascending order, from $0$ to $n_i-1$. Then
 \begin{equation}
-w^{\mathrm{out}}_{i,t,k}
-=
-{\bf 1}[(t,k)\in{\cal A}_i].
-\end{equation}
-This removes outcome-conflicting dense rewards, but it can be brittle when either the local teacher preference or the final verifier signal is noisy.
-
-POV-OPD therefore also uses a rank variant. The rank variant preserves all aligned candidates at full weight and assigns only beta-capped weights to anti-aligned candidates. Let $n_i=|{\cal B}_i|$. For $(t,k)\in{\cal B}_i$, define
-\begin{equation}
-q_{i,t,k}
-=
-\left\{
-\begin{array}{ll}
+\begin{aligned}
+q_{i,t,k}&=
+\begin{cases}
 1, & n_i=1,\\
-\frac{\mathrm{rank}_{{\cal B}_i}(s_{i,t,k})}{n_i-1}, & n_i>1.
-\end{array}
-\right.
-\end{equation}
-The lowest signed score in ${\cal B}_i$ has rank $0$, and the largest signed score in ${\cal B}_i$ has rank $n_i-1$. Thus anti-aligned candidates closer to the margin receive larger rank weights. With $\beta\in[0,1]$, the rank outcome-validation weight is
-\begin{equation}
-w^{\mathrm{out}}_{i,t,k}
-=
-\left\{
-\begin{array}{ll}
+\dfrac{\operatorname{rank}_{{\cal B}_i}(s_{i,t,k})}{n_i-1}, & n_i>1,
+\end{cases}\\[2pt]
+w^{\mathrm{out}}_{i,t,k}&=
+\begin{cases}
 1, & (t,k)\in{\cal A}_i,\\
 \beta q_{i,t,k}, & (t,k)\in{\cal B}_i,\\
-0, & |s_{i,t,k}|\leq m.
-\end{array}
-\right.
+0, & |s_{i,t,k}|\leq m,
+\end{cases}
+\end{aligned}
+\label{eq:outcome-validation}
 \end{equation}
-This differs from globally reweighting all candidates: aligned candidates are not down-weighted, and $\beta$ only controls the maximum retained strength of anti-aligned supervision.
+where $\beta\in[0,1]$ caps the retained strength of outcome-conflicting supervision. Anti-aligned candidates closer to the margin receive larger weights, while aligned candidates are never down-weighted. Setting $\beta=0$ recovers hard outcome filtering.
 
-POV-OPD also supports position-level validation. Instead of validating each candidate separately, it first aggregates the alignment score at a position:
+POV-OPD also supports position-level validation. Instead of judging candidates separately, it uses
 \begin{equation}
-s_{i,t}^{\mathrm{pos}}
-=
-z_i\sum_{k=1}^{K} g_{i,t,k}.
+s^{\mathrm{pos}}_{i,t}=z_i\sum_{k=1}^{K}\delta_{i,t,k},
+\label{eq:position-alignment}
 \end{equation}
-The hard position variant keeps positions with $s_{i,t}^{\mathrm{pos}}>m$. The rank position variant ranks only positions with $s_{i,t}^{\mathrm{pos}}<-m$, assigns them beta-capped weights, and broadcasts the resulting position weight to all candidates at that position. These variants test whether outcome consistency should be judged at the candidate level or at the next-token decision level.
+applies the same hard or rank rule across positions, and broadcasts the resulting weight to all candidates at that position. Candidate-level and position-level variants therefore differ only in the granularity at which outcome consistency is assessed.
 
 \subsection{Prefix Validation}
 
-Outcome validation checks the direction of local teacher preferences. Prefix validation checks whether the teacher remains reliable on the student-generated prefix. Let
-\begin{equation}
-H^T_{i,t}
-=
--\sum_a \pi_T(a\mid x,y_{i,<t})
-\log \pi_T(a\mid x,y_{i,<t})
-\end{equation}
-be the teacher entropy at position $t$. For the sampled token $y_{i,t}$, define teacher excess surprisal
-\begin{equation}
-u_{i,t}
-=
--\log \pi_T(y_{i,t}\mid x,y_{i,<t})
--
-H^T_{i,t}.
-\end{equation}
-A positive value means that the sampled token is more surprising under the teacher than a typical token drawn from the teacher distribution at the same prefix.
-
-For each response, we divide valid response tokens into consecutive windows of size $W$. Let $\bar u_{i,b}$ be the mean excess surprisal in window $b$. The first $L$ windows form a baseline, with
-\begin{equation}
-\mu_i =
-\frac{1}{L_i}\sum_{b=1}^{L_i}\bar u_{i,b},
-\quad
-L_i=\min(L,M_i),
-\end{equation}
-where $M_i$ is the number of windows in response $i$. For later windows, we compute relative excess
-\begin{equation}
-d_{i,b}=\bar u_{i,b}-\mu_i,
-\end{equation}
-and a one-sided CUSUM statistic
-\begin{equation}
-C_{i,b}
-=
-\max(0, C_{i,b-1}+d_{i,b}-\kappa),
-\quad b>L_i,
-\end{equation}
-where $\kappa\geq 0$ is a drift allowance. The prefix horizon is the first post-baseline window whose CUSUM exceeds threshold $\tau$:
-\begin{equation}
-b_i^\star =
-\min\{b>L_i:C_{i,b}>\tau\}.
-\end{equation}
-If no such window exists, all prefix weights remain one.
-
-After the horizon is triggered, POV-OPD monotonically decays the prefix weight:
+Outcome validation checks the direction of a local preference; prefix validation checks whether the teacher remains well supported along the student trajectory. We compare the surprisal of the sampled token with the teacher entropy at the same prefix:
 \begin{equation}
 \begin{aligned}
-\eta_{i,b} &=
-\exp[-\lambda\max(C_{i,b}-\tau,0)],\\
-w^{\mathrm{pre}}_{i,b}
-&=
-\left\{
-\begin{array}{ll}
-1, & b < b_i^\star,\\
-\min(w^{\mathrm{pre}}_{i,b-1},\eta_{i,b}),
-& b \geq b_i^\star .
-\end{array}
-\right.
+H^T_{i,t}&=-\sum_a\pi_T(a\mid x,y_{i,<t})
+\log\pi_T(a\mid x,y_{i,<t}),\\
+u_{i,t}&=-\log\pi_T(y_{i,t}\mid x,y_{i,<t})-H^T_{i,t}.
 \end{aligned}
+\label{eq:excess-surprisal}
 \end{equation}
-The token-level prefix weight $w^{\mathrm{pre}}_{i,t}$ is obtained by assigning the window weight to every valid token in that window. This produces a non-increasing trust weight after sustained teacher-surprisal drift.
+A positive $u_{i,t}$ means that the sampled token is more surprising to the teacher than a typical token under the teacher distribution. Isolated high-surprisal tokens need not indicate failure, so we detect sustained rather than instantaneous drift.
 
-\subsection{Aligned-Candidate Support}
-
-POV-OPD gives a small boost to aligned candidates that are also well supported by the teacher distribution. For a candidate $a_{i,t,k}$, define
+We divide the valid response into $M_i$ consecutive windows of $W$ tokens and denote the mean excess surprisal in window $b$ by $\bar u_{i,b}$. The first $L_i=\min(L,M_i)$ windows form a response-specific baseline. Baseline estimation, one-sided CUSUM accumulation, and horizon detection are
 \begin{equation}
-r_{i,t,k}
-=
--\ell^T_{i,t,k}-H^T_{i,t}.
+\begin{aligned}
+\mu_i&=\frac{1}{L_i}\sum_{b=1}^{L_i}\bar u_{i,b},
+&C_{i,L_i}&=0,\\
+C_{i,b}&=\max\!\left(0,C_{i,b-1}+\bar u_{i,b}-\mu_i-\kappa\right),
+&b&>L_i,\\
+b_i^\star&=\min\{b>L_i:C_{i,b}>\tau\},
+\end{aligned}
+\label{eq:prefix-detection}
 \end{equation}
-The candidate support is
+where $\kappa\geq0$ is a drift allowance and $\tau$ is the detection threshold. If the threshold is never crossed, all prefix weights remain one.
+
+After detection, the window weight decays monotonically:
 \begin{equation}
+\begin{aligned}
+\eta_{i,b}&=\exp[-\lambda\max(C_{i,b}-\tau,0)],\\
+w^{\mathrm{pre}}_{i,b}&=
+\begin{cases}
+1, & b<b_i^\star,\\
+\min(w^{\mathrm{pre}}_{i,b-1},\eta_{i,b}), & b\geq b_i^\star.
+\end{cases}
+\end{aligned}
+\label{eq:prefix-validation}
+\end{equation}
+Each window weight is assigned to its valid tokens. The monotone recursion prevents later fluctuations from restoring full teacher trust after sustained prefix drift has already been detected.
+
+\subsection{Teacher-Supported Boost}
+
+Among outcome-aligned candidates, POV-OPD gives a small boost to those that are also plausible under the teacher distribution. Eliminating an unnecessary intermediate surprisal variable, we define support and its weight directly as
+\begin{equation}
+\begin{aligned}
 p^{\mathrm{sup}}_{i,t,k}
-=
-\exp[-\max(r_{i,t,k},0)].
+&=\exp\!\left[-\max\!\left(-\ell^T_{i,t,k}-H^T_{i,t},0\right)\right],\\
+w^{\mathrm{sup}}_{i,t,k}
+&=1+\alpha p^{\mathrm{sup}}_{i,t,k}{\bf 1}[(t,k)\in{\cal A}_i],
+\end{aligned}
+\label{eq:teacher-support}
 \end{equation}
-This support equals one when the candidate is no more surprising than the teacher entropy and decays when the candidate is unusually surprising under the teacher. The aligned boost is
-\begin{equation}
-b_{i,t,k}
-=
-1+\alpha p^{\mathrm{sup}}_{i,t,k}
-{\bf 1}[(t,k)\in{\cal A}_i],
-\end{equation}
-where $\alpha\geq 0$ controls the boost strength. Anti-aligned and ambiguous candidates are not boosted.
+where $\alpha\geq0$ controls the maximum boost. Support equals one when the candidate is no more surprising than the teacher entropy and decays otherwise. Anti-aligned and ambiguous candidates are not boosted.
 
-\subsection{Final Objective}
+\subsection{Optimization}
 
-The final POV-OPD advantage is
+We substitute Equation~\eqref{eq:pov-advantage} for the original OPD advantage in the same clipped PPO-style update. Writing the policy ratio once and using it directly in the loss gives
 \begin{equation}
-A^{\mathrm{POV}}_{i,t,k}
-=
-D_{i,t,k}
-\cdot
-w^{\mathrm{out}}_{i,t,k}
-\cdot
-w^{\mathrm{pre}}_{i,t}
-\cdot
-b_{i,t,k}.
-\end{equation}
-For sampled-token OPD, this expression reduces to $K=1$. For top-$K$ OPD, it applies to each candidate token.
-
-The policy is optimized with the same PPO-style update used by OPD. Let
-\begin{equation}
+\begin{aligned}
 r_{i,t,k}(\theta)
-=
-\frac{\pi_\theta(a_{i,t,k}\mid x,y_{i,<t})}
-{\pi_{\theta_{\mathrm{old}}}(a_{i,t,k}\mid x,y_{i,<t})}.
-\end{equation}
-Let $\bar r_{i,t,k}(\theta)=
-\mathrm{clip}(r_{i,t,k}(\theta),1-\epsilon,1+\epsilon)$.
-The clipped objective is
-\begin{equation}
+&=\frac{\pi_\theta(a_{i,t,k}\mid x,y_{i,<t})}
+{\pi_{\theta_{\mathrm{old}}}(a_{i,t,k}\mid x,y_{i,<t})},\\
 {\cal L}_{\mathrm{POV}}
-=
--\sum_{i,t,k}
-\min
-\left(
-r_{i,t,k}(\theta)A^{\mathrm{POV}}_{i,t,k},
-\bar r_{i,t,k}(\theta)A^{\mathrm{POV}}_{i,t,k}
-\right).
+&=-\sum_{i,t,k}\min\!\left\{
+\begin{aligned}
+&r_{i,t,k}(\theta)A^{\mathrm{POV}}_{i,t,k},\\
+&\operatorname{clip}_{[1-\epsilon,\,1+\epsilon]}(r_{i,t,k}(\theta))
+A^{\mathrm{POV}}_{i,t,k}
+\end{aligned}
+\right\}.
+\end{aligned}
+\label{eq:pov-objective}
 \end{equation}
-POV-OPD therefore changes the credit assignment used to form advantages, while leaving rollout generation, teacher scoring, and the actor optimization pipeline unchanged.
+All validation weights are computed without gradient and held fixed during the actor update. For sampled-token OPD the objective reduces to $K=1$; for top-$K$ OPD it applies to every candidate. POV-OPD therefore changes token-level credit assignment while preserving the rollout generation, teacher scoring, and actor optimization pipeline of OPD.

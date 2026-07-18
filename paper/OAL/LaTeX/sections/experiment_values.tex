@@ -1,0 +1,49 @@
+% Centralized placeholders for the compact ablation and gradient audit.
+% Replace each ``--'' with the measured value; the table and analysis text
+% will update together.  Accuracy entries are macro means over the six
+% benchmarks.  Cosines should be reported as mean \pm uncertainty.
+
+% Component ablation: Macro Avg@8 / Macro Best@8.
+\newcommand{\AblOPDAvg}{--}
+\newcommand{\AblOPDBest}{--}
+\newcommand{\AblOutcomeAvg}{--}
+\newcommand{\AblOutcomeBest}{--}
+\newcommand{\AblPrefixAvg}{--}
+\newcommand{\AblPrefixBest}{--}
+\newcommand{\AblOutcomePrefixAvg}{--}
+\newcommand{\AblOutcomePrefixBest}{--}
+\newcommand{\AblFullAvg}{--}
+\newcommand{\AblFullBest}{--}
+
+% Independent-reference gradient audit: cosine / negative-batch rate (%) /
+% near-zero candidate-gradient rate (%) / relative norm.  AuditN is the
+% common number of reference-valid rollout pairs used by every method.
+\newcommand{\AuditN}{--}
+\newcommand{\AuditOutcomeCos}{--}
+\newcommand{\AuditOutcomeNeg}{--}
+\newcommand{\AuditOutcomeZero}{--}
+\newcommand{\AuditOutcomeNorm}{--}
+\newcommand{\AuditRawCos}{--}
+\newcommand{\AuditRawNeg}{--}
+\newcommand{\AuditRawZero}{--}
+\newcommand{\AuditRawNorm}{--}
+\newcommand{\AuditPOVCos}{--}
+\newcommand{\AuditPOVNeg}{--}
+\newcommand{\AuditPOVZero}{--}
+\newcommand{\AuditPOVNorm}{--}
+
+% Prefix-horizon audit.  Conflict rates are percentages; cosine entries are
+% batch/window aggregates computed against the independent outcome reference.
+\newcommand{\HorizonTriggerRate}{--}
+\newcommand{\HorizonMatchedPairs}{--}
+\newcommand{\HorizonTriggeredConflictPre}{--}
+\newcommand{\HorizonTriggeredConflictPost}{--}
+\newcommand{\HorizonTriggeredConflictDelta}{--}
+\newcommand{\HorizonTriggeredCosPre}{--}
+\newcommand{\HorizonTriggeredCosPost}{--}
+\newcommand{\HorizonControlConflictPre}{--}
+\newcommand{\HorizonControlConflictPost}{--}
+\newcommand{\HorizonControlConflictDelta}{--}
+\newcommand{\HorizonControlCosPre}{--}
+\newcommand{\HorizonControlCosPost}{--}
+\newcommand{\HorizonConflictDID}{--}
