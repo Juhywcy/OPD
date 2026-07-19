@@ -10,6 +10,14 @@ set -euo pipefail
 # A positional model path is also accepted:
 #   bash verl/recipe/repro/eval_gpqa_avg16_best16_8gpu.sh /path/to/hf_checkpoint
 #
+# A raw verl FSDP actor is accepted directly and is merged automatically:
+#   ACTOR_MODEL_PATH=checkpoint/run/global_step_279/actor \
+#     bash verl/recipe/repro/eval_gpqa_avg16_best16_8gpu.sh
+# The source actor/model/optimizer/extra shards are never deleted or modified.
+# Optional: set FSDP_MERGE_CACHE_DIR, FORCE_MODEL_REMERGE=True, or
+# FSDP_STRICT_SHARD_HASH=True to override the cache, rebuild it, or hash every
+# large shard respectively.
+#
 # Defaults target a 1.5B model on 8 x A800: TP=1, DP=8, 16 sampled
 # responses per question, and 8192 maximum generated tokens.  The script saves
 # every generation, then computes exact avg@16/best@16 (plus pass@16) itself.
@@ -19,11 +27,18 @@ REPO_ROOT=$(cd "${SCRIPT_DIR}/../../.." && pwd)
 cd "${REPO_ROOT}"
 
 PYTHON_BIN=${PYTHON_BIN:-python3}
-ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-${MODEL_PATH:-${1:-}}}
-if [[ -z "${ACTOR_MODEL_PATH}" ]]; then
-    echo "ERROR: set ACTOR_MODEL_PATH=/path/to/model or pass the model path as argument 1." >&2
+REQUESTED_MODEL_PATH=${ACTOR_MODEL_PATH:-${MODEL_PATH:-${1:-}}}
+if [[ -z "${REQUESTED_MODEL_PATH}" ]]; then
+    echo "ERROR: set ACTOR_MODEL_PATH to an HF model/Hub id or a verl actor checkpoint." >&2
     exit 2
 fi
+
+is_true() {
+    case "${1:-}" in
+        1|true|True|TRUE|yes|Yes|YES) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 GPQA_FILE=${GPQA_FILE:-datasets/test_data/GPQA/test.parquet}
 if [[ ! -f "${GPQA_FILE}" ]]; then
@@ -78,8 +93,34 @@ if (( MAX_MODEL_LEN < MAX_PROMPT_LENGTH + MAX_VAL_RESP_LENGTH )); then
     exit 2
 fi
 
+# Resolve a normal HF model directly, or safely merge a raw verl FSDP actor
+# into a fingerprinted cache before Ray/vLLM starts using GPU memory.
+MODEL_RESOLVER=(
+    "${PYTHON_BIN}" "${SCRIPT_DIR}/prepare_model_for_eval.py"
+    --model-path "${REQUESTED_MODEL_PATH}"
+)
+if [[ -n "${FSDP_MERGE_CACHE_DIR:-}" ]]; then
+    MODEL_RESOLVER+=(--cache-dir "${FSDP_MERGE_CACHE_DIR}")
+fi
+if is_true "${TRUST_REMOTE_CODE}"; then
+    MODEL_RESOLVER+=(--trust-remote-code)
+fi
+if is_true "${FORCE_MODEL_REMERGE:-False}"; then
+    MODEL_RESOLVER+=(--force-remerge)
+fi
+if is_true "${FSDP_STRICT_SHARD_HASH:-False}"; then
+    MODEL_RESOLVER+=(--strict-shard-hash)
+fi
+if is_true "${DRY_RUN:-0}"; then
+    MODEL_RESOLVER+=(--dry-run)
+fi
+ACTOR_MODEL_PATH=$("${MODEL_RESOLVER[@]}")
+
 PROJECT_NAME=${PROJECT_NAME:-verl-val-gpqa}
-MODEL_NAME=$(basename "${ACTOR_MODEL_PATH}")
+MODEL_NAME=$(basename "${REQUESTED_MODEL_PATH%/}")
+if [[ "${MODEL_NAME}" == "actor" || "${MODEL_NAME}" == "huggingface" ]]; then
+    MODEL_NAME=$(basename "$(dirname "${REQUESTED_MODEL_PATH%/}")")
+fi
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-eval_${MODEL_NAME}_gpqa_n${N_VAL_RESPONSES}_$(date +%Y-%m-%d_%H-%M-%S)}
 VALIDATION_LOG_DIR=${VALIDATION_LOG_DIR:-validation_log}
 OUTPUT_DIR="${VALIDATION_LOG_DIR}/${EXPERIMENT_NAME}"
@@ -87,7 +128,6 @@ GENERATION_FILE="${OUTPUT_DIR}/0.jsonl"
 SUMMARY_FILE="${OUTPUT_DIR}/gpqa_avg${N_VAL_RESPONSES}_best${N_VAL_RESPONSES}.json"
 
 LOG_DIR=${LOG_DIR:-logs/val/gpqa}
-mkdir -p "${LOG_DIR}" "${OUTPUT_DIR}"
 LOG_FILE="${LOG_DIR}/${EXPERIMENT_NAME}.log"
 
 export PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
@@ -165,7 +205,8 @@ VERL_CMD=(
 )
 
 echo "============================================================"
-echo "Model:                 ${ACTOR_MODEL_PATH}"
+echo "Requested model:       ${REQUESTED_MODEL_PATH}"
+echo "Resolved HF model:     ${ACTOR_MODEL_PATH}"
 echo "Dataset:               ${GPQA_FILE}"
 echo "CUDA_VISIBLE_DEVICES:  ${CUDA_VISIBLE_DEVICES}"
 echo "GPU topology:          TP=${PARALLEL_SIZE}, DP=${DP_SIZE}"
@@ -176,13 +217,14 @@ echo "Summary JSON:          ${SUMMARY_FILE}"
 echo "Log:                   ${LOG_FILE}"
 echo "============================================================"
 
-if [[ "${DRY_RUN:-0}" == "1" ]]; then
+if is_true "${DRY_RUN:-0}"; then
     printf 'DRY RUN command:'
     printf ' %q' "${VERL_CMD[@]}"
     printf '\n'
     exit 0
 fi
 
+mkdir -p "${LOG_DIR}" "${OUTPUT_DIR}"
 exec > >(tee -a "${LOG_FILE}") 2>&1
 
 if command -v ray >/dev/null 2>&1; then
