@@ -245,7 +245,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     reward_model.micro_batch_size_per_gpu=24 \
     custom_reward_function.path="verl/verl/utils/reward_score/ttrl_math/__init__.py" \
     custom_reward_function.name=reward_func \
-    trainer.val_before_train=False \
+    trainer.val_before_train=True \
     trainer.log_val_generations=2 \
     trainer.logger=['console','swanlab'] \
     trainer.project_name=$PROJECT_NAME \
