@@ -210,6 +210,17 @@ $$
 CI 应按 prompt 或 audit batch 做 cluster bootstrap，不能把同一 trajectory 的多个
 window 当成相互独立的样本。
 
+### 4.4 实现入口
+
+- 第 3 节与 window gradient：`verl/recipe/repro/pov_gradient_audit.py`
+- 第 4 节匹配、DID 与 cluster bootstrap：`verl/recipe/repro/prefix_horizon_audit.py`
+- 统一启动脚本：`scripts/audit/run_pov_audits.sh`
+- 参数、输出和 smoke test：`verl/recipe/repro/POV_AUDIT.md`
+
+实现为独立的离线审计流程，不修改训练 trainer/actor，不创建 optimizer，也不会更新
+checkpoint。默认 `GRADIENT_PARAMETER_REGEX=lm_head`，因此论文中应称为
+gradient-subspace audit。
+
 ## 5. 当前论文表格需要补充或修正
 
 - [ ] 将所有 Best@8 统一改为 Pass@8，除非实际计算的是八次完整评估中的最大准确率。
