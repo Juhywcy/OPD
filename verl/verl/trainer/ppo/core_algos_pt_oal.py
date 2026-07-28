@@ -1232,44 +1232,57 @@ def _odw_outcome_scores(true_reward_score, token_level_rewards, response_mask):
 
 def _oal_get_config(config):
     raw = _config_get(config, "pt_oal", {}) or {}
+    outcome_validation_enabled = _config_get(raw, "outcome_validation_enabled", None)
+    if outcome_validation_enabled is None:
+        # Backward compatibility for the old prefix-only ablation.
+        outcome_validation_enabled = str(_config_get(raw, "split_mode", "oal")) != "all"
     return {
         "enabled": bool(_config_get(raw, "enabled", True)),
+        # Compatibility-only: token_reward_direct uses this for diagnostics.
+        # The parameter-free POV estimator below does not read this value.
         "margin": float(_config_get(raw, "margin", 0.0)),
-        "split_mode": str(_config_get(raw, "split_mode", "oal")),
-        "weight_mode": str(_config_get(raw, "weight_mode", "hard")),
-        "anti_beta": min(1.0, max(0.0, float(_config_get(raw, "anti_beta", 0.1)))),
-        "aligned_boost_alpha": max(0.0, float(_config_get(raw, "aligned_boost_alpha", 0.5))),
+        "outcome_validation_enabled": bool(outcome_validation_enabled),
         "prefix_trust_enabled": bool(_config_get(raw, "prefix_trust_enabled", True)),
-        "prefix_window_size": max(1, int(_config_get(raw, "prefix_window_size", 256))),
+        "prefix_window_size": max(1, int(_config_get(raw, "prefix_window_size", 128))),
         "prefix_baseline_blocks": max(1, int(_config_get(raw, "prefix_baseline_blocks", 2))),
-        "prefix_drift_allowance": max(0.0, float(_config_get(raw, "prefix_drift_allowance", 0.1))),
-        "prefix_cusum_threshold": max(0.0, float(_config_get(raw, "prefix_cusum_threshold", 1.0))),
-        "prefix_decay_lambda": max(0.0, float(_config_get(raw, "prefix_decay_lambda", 1.0))),
     }
 
 
-def _oal_rank_weights(aligned_scores, eligible_mask):
-    rank_weights = torch.zeros_like(aligned_scores)
-    batch_size = aligned_scores.shape[0]
+def _oal_leave_one_out_outcome_advantage(outcome_scores, index):
+    """Return a bounded, group-relative outcome residual for each response."""
+    if index is None:
+        raise ValueError("POV outcome validation requires response-group ids in `index`.")
+    if len(index) != outcome_scores.shape[0]:
+        raise ValueError(
+            f"POV received {len(index)} response-group ids for a batch of {outcome_scores.shape[0]} responses."
+        )
 
-    for batch_idx in range(batch_size):
-        valid = eligible_mask[batch_idx].bool()
-        valid_count = int(valid.sum().item())
-        if valid_count <= 0:
+    id_to_positions = defaultdict(list)
+    for batch_idx, group_id in enumerate(index):
+        id_to_positions[group_id].append(batch_idx)
+
+    advantages = torch.zeros_like(outcome_scores)
+    for positions in id_to_positions.values():
+        if len(positions) <= 1:
             continue
+        position_tensor = torch.as_tensor(positions, device=outcome_scores.device, dtype=torch.long)
+        group_scores = outcome_scores.index_select(0, position_tensor)
+        leave_one_out_mean = (group_scores.sum() - group_scores) / float(len(positions) - 1)
+        advantages[position_tensor] = group_scores - leave_one_out_mean
+    return advantages
 
-        if valid_count == 1:
-            rank_weights[batch_idx][valid] = 1.0
+
+def _oal_normalized_logit_delta(logit_delta, valid_mask, eps=1e-6):
+    """Robustly normalize each response's OPD gap and bound it to (-1, 1)."""
+    normalized = torch.zeros_like(logit_delta)
+    for batch_idx in range(logit_delta.shape[0]):
+        valid = valid_mask[batch_idx].bool()
+        values = logit_delta[batch_idx][valid]
+        if values.numel() == 0:
             continue
-
-        values = aligned_scores[batch_idx][valid]
-        order = torch.argsort(values, dim=0)
-        ranks = torch.empty_like(values)
-        ranks[order] = torch.arange(valid_count, device=values.device, dtype=values.dtype)
-        rank_weights[batch_idx][valid] = ranks / float(valid_count - 1)
-
-    return rank_weights
-
+        scale = values.abs().median().clamp_min(eps)
+        normalized[batch_idx][valid] = torch.tanh(values / scale)
+    return normalized
 
 
 def _pt_oal_prefix_trust_weights(
@@ -1278,21 +1291,22 @@ def _pt_oal_prefix_trust_weights(
     response_mask,
     pt_cfg,
 ):
-    """Compute monotone teacher-trust weights from causal prefix evidence."""
+    """Compute threshold-free monotone prefix trust from relative teacher support."""
     mask = response_mask.to(dtype=teacher_entropy.dtype)
     excess_surprisal = (-teacher_sampled_log_probs - teacher_entropy) * mask
+    token_support = torch.exp(-torch.relu(excess_surprisal)) * mask
     prefix_weights = mask.clone()
-    window_excess = torch.zeros_like(mask)
+    window_support = torch.zeros_like(mask)
+    window_log_support_drop = torch.zeros_like(mask)
     cusum_values = torch.zeros_like(mask)
+    baseline_support_values = torch.zeros_like(mask)
     valid_lens = response_mask.sum(dim=-1).long()
     horizons = valid_lens.clone()
     triggered = torch.zeros_like(valid_lens, dtype=mask.dtype)
 
     window_size = pt_cfg["prefix_window_size"]
     baseline_blocks = pt_cfg["prefix_baseline_blocks"]
-    allowance = pt_cfg["prefix_drift_allowance"]
-    threshold = pt_cfg["prefix_cusum_threshold"]
-    decay_lambda = pt_cfg["prefix_decay_lambda"]
+    eps = 1e-6
 
     for batch_idx in range(mask.shape[0]):
         valid_len = int(valid_lens[batch_idx].item())
@@ -1303,37 +1317,53 @@ def _pt_oal_prefix_trust_weights(
             (start, min(start + window_size, valid_len))
             for start in range(0, valid_len, window_size)
         ]
-        block_means = torch.stack(
-            [excess_surprisal[batch_idx, start:end].mean() for start, end in block_ranges]
+        block_support = torch.stack(
+            [token_support[batch_idx, start:end].mean() for start, end in block_ranges]
         )
         baseline_count = min(baseline_blocks, len(block_ranges))
-        baseline = block_means[:baseline_count].mean()
+        baseline_support = block_support[:baseline_count].mean()
+        baseline_support_values[batch_idx, :valid_len] = baseline_support
 
         cusum = torch.zeros((), device=mask.device, dtype=mask.dtype)
         current_weight = torch.ones((), device=mask.device, dtype=mask.dtype)
         has_triggered = False
 
         for block_idx, (start, end) in enumerate(block_ranges):
-            relative_excess = block_means[block_idx] - baseline
-            window_excess[batch_idx, start:end] = relative_excess
+            support = block_support[block_idx]
+            log_support_drop = torch.log((baseline_support + eps) / (support + eps))
+            window_support[batch_idx, start:end] = support
+            window_log_support_drop[batch_idx, start:end] = log_support_drop
 
             if block_idx >= baseline_count:
-                cusum = torch.clamp(cusum + relative_excess - allowance, min=0.0)
+                cusum = torch.clamp(cusum + log_support_drop, min=0.0)
+                raw_weight = torch.exp(-cusum)
+                current_weight = torch.minimum(current_weight, raw_weight)
 
-            if not has_triggered and block_idx >= baseline_count and bool((cusum > threshold).item()):
+            # The half-trust horizon is diagnostic only; it never gates training.
+            if (
+                not has_triggered
+                and block_idx >= baseline_count
+                and bool((current_weight <= 0.5 + eps).item())
+            ):
                 has_triggered = True
                 horizons[batch_idx] = start
                 triggered[batch_idx] = 1.0
-
-            if has_triggered:
-                raw_weight = torch.exp(-decay_lambda * torch.clamp(cusum - threshold, min=0.0))
-                current_weight = torch.minimum(current_weight, raw_weight)
 
             cusum_values[batch_idx, start:end] = cusum
             prefix_weights[batch_idx, start:end] = current_weight
 
     prefix_weights = prefix_weights * mask
-    return prefix_weights, excess_surprisal, window_excess, cusum_values, horizons, triggered
+    return (
+        prefix_weights,
+        excess_surprisal,
+        token_support,
+        window_support,
+        window_log_support_drop,
+        cusum_values,
+        baseline_support_values,
+        horizons,
+        triggered,
+    )
 
 
 @register_adv_est("prefix_trust_oal_opd")
@@ -1341,19 +1371,10 @@ def compute_outcome_aligned_logit_opd_advantage(
     token_level_rewards: torch.Tensor,
     response_mask: torch.Tensor,
     config: Optional[AlgoConfig] = None,
+    index: Optional[np.ndarray] = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-    """
-    Prefix-Trust Outcome-Aligned Logit OPD.
-
-    OPD rewards are proportional to teacher_logp - student_logp on the
-    selected candidate tokens. Hard mode keeps only outcome-aligned candidates.
-    Rank mode keeps aligned candidate supervision intact and only gives
-    anti-aligned candidates a beta-capped rank weight within each response.
-    Position modes first aggregate the top-k teacher signal at each position,
-    then broadcast a position-level weight to all candidates at that position.
-    Position-rank applies the same beta-capped anti weighting after aggregation.
-    """
+    """Parameter-free Prefix-Outcome Validity calibration for dense OPD."""
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
         if token_level_rewards.dim() == 3:
@@ -1369,125 +1390,35 @@ def compute_outcome_aligned_logit_opd_advantage(
         mask = response_mask.to(dtype=token_level_rewards.dtype)
         outcome_scores = _odw_outcome_scores(kwargs.get("true_reward_score", None), token_level_rewards, response_mask)
         correct = outcome_scores > 0.5
-        margin = oal_cfg["margin"]
         align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(dtype=token_level_rewards.dtype)
 
-        split_mode = oal_cfg["split_mode"]
-        weight_mode = oal_cfg["weight_mode"]
-        anti_beta = oal_cfg["anti_beta"]
-        if split_mode not in {
-            "oal",
-            "align",
-            "anti",
-            "all",
-            "pos_align",
-            "pos_anti",
-            "neg_align",
-            "neg_anti",
-        }:
-            raise ValueError(
-                "Unsupported OAL split_mode: "
-                f"{split_mode}. Expected one of oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti."
-            )
-        if weight_mode not in {"hard", "rank", "position_hard", "position_rank"}:
-            raise ValueError(
-                "Unsupported OAL weight_mode: "
-                f"{weight_mode}. Expected hard, rank, position_hard, or position_rank."
-            )
-
         if token_level_rewards.dim() == 3:
-            correct_view = correct.view(-1, 1, 1)
             valid_mask = response_mask.unsqueeze(-1).expand_as(align_scores).to(dtype=token_level_rewards.dtype)
-            pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
-            pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
-            neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
-            neg_anti_mask = ((~correct_view) & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            outcome_view_shape = (-1, 1, 1)
         else:
-            correct_view = correct.view(-1, 1)
             valid_mask = mask
-            pos_align_mask = (correct_view & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
-            pos_anti_mask = (correct_view & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
-            neg_align_mask = ((~correct_view) & (align_scores < -margin)).to(dtype=token_level_rewards.dtype) * valid_mask
-            neg_anti_mask = ((~correct_view) & (align_scores > margin)).to(dtype=token_level_rewards.dtype) * valid_mask
+            outcome_view_shape = (-1, 1)
 
-        if split_mode in {"oal", "align"}:
-            keep_mask = pos_align_mask + neg_align_mask
-        elif split_mode == "anti":
-            keep_mask = pos_anti_mask + neg_anti_mask
-        elif split_mode == "all":
-            keep_mask = valid_mask
-        elif split_mode == "pos_align":
-            keep_mask = pos_align_mask
-        elif split_mode == "pos_anti":
-            keep_mask = pos_anti_mask
-        elif split_mode == "neg_align":
-            keep_mask = neg_align_mask
-        elif split_mode == "neg_anti":
-            keep_mask = neg_anti_mask
+        normalized_delta = _oal_normalized_logit_delta(align_scores, valid_mask)
+        if oal_cfg["outcome_validation_enabled"]:
+            group_outcome_advantage = _oal_leave_one_out_outcome_advantage(outcome_scores, index)
+            outcome_alignment = group_outcome_advantage.view(*outcome_view_shape) * normalized_delta
+            conflict_score = torch.relu(-outcome_alignment).clamp(max=1.0) * valid_mask
+            outcome_weights = (1.0 - conflict_score) * valid_mask
+        else:
+            group_outcome_advantage = torch.zeros_like(outcome_scores)
+            outcome_alignment = torch.zeros_like(align_scores)
+            conflict_score = torch.zeros_like(align_scores)
+            outcome_weights = valid_mask
 
-        position_weights = None
-        position_aligned_mask = None
-        position_anti_mask = None
-        if weight_mode == "rank":
-            if split_mode not in {"oal", "align"}:
-                raise ValueError(
-                    "rank weight mode requires OAL split_mode=oal or align, "
-                    f"got {split_mode}."
-                )
-
-            signed_outcome = correct.to(dtype=align_scores.dtype) * 2.0 - 1.0
-            if token_level_rewards.dim() == 3:
-                signed_outcome = signed_outcome.view(-1, 1, 1)
-            else:
-                signed_outcome = signed_outcome.view(-1, 1)
-            outcome_aligned_scores = signed_outcome * align_scores
-
-            aligned_mask = pos_align_mask + neg_align_mask
-            anti_mask = pos_anti_mask + neg_anti_mask
-            anti_weights = _oal_rank_weights(outcome_aligned_scores, anti_mask) * anti_beta
-            keep_mask = aligned_mask + anti_weights
-        elif weight_mode in {"position_hard", "position_rank"}:
-            signed_outcome = correct.to(dtype=token_level_rewards.dtype) * 2.0 - 1.0
-            if token_level_rewards.dim() == 3:
-                position_scores = align_scores.sum(dim=-1)
-            else:
-                position_scores = align_scores
-            outcome_aligned_position_scores = signed_outcome.view(-1, 1) * position_scores
-
-            if split_mode in {"pos_align", "pos_anti"}:
-                rank_eligible_mask = correct.view(-1, 1).to(dtype=mask.dtype) * mask
-            elif split_mode in {"neg_align", "neg_anti"}:
-                rank_eligible_mask = (~correct).view(-1, 1).to(dtype=mask.dtype) * mask
-            else:
-                rank_eligible_mask = mask
-
-            if weight_mode == "position_rank":
-                if split_mode not in {"oal", "align"}:
-                    raise ValueError(
-                        "position_rank weight mode requires OAL split_mode=oal or align, "
-                        f"got {split_mode}."
-                    )
-                position_aligned_mask = (
-                    (outcome_aligned_position_scores > margin).to(dtype=mask.dtype) * mask
-                )
-                position_anti_mask = (
-                    (outcome_aligned_position_scores < -margin).to(dtype=mask.dtype) * mask
-                )
-                anti_position_weights = (
-                    _oal_rank_weights(outcome_aligned_position_scores, position_anti_mask) * anti_beta
-                )
-                position_weights = position_aligned_mask + anti_position_weights
-            else:
-                if split_mode in {"oal", "align", "all", "pos_align", "neg_align"}:
-                    position_weights = (outcome_aligned_position_scores > margin).to(dtype=mask.dtype)
-                elif split_mode in {"anti", "pos_anti", "neg_anti"}:
-                    position_weights = (outcome_aligned_position_scores < -margin).to(dtype=mask.dtype)
-                position_weights = position_weights * rank_eligible_mask
-
-            if token_level_rewards.dim() == 3:
-                keep_mask = position_weights.unsqueeze(-1).expand_as(token_level_rewards)
-            else:
-                keep_mask = position_weights
+        positive_outcome = group_outcome_advantage.view(*outcome_view_shape) > 0
+        negative_outcome = group_outcome_advantage.view(*outcome_view_shape) < 0
+        aligned = outcome_alignment > 0
+        anti_aligned = outcome_alignment < 0
+        pos_align_mask = (positive_outcome & aligned).to(dtype=valid_mask.dtype) * valid_mask
+        pos_anti_mask = (positive_outcome & anti_aligned).to(dtype=valid_mask.dtype) * valid_mask
+        neg_align_mask = (negative_outcome & aligned).to(dtype=valid_mask.dtype) * valid_mask
+        neg_anti_mask = (negative_outcome & anti_aligned).to(dtype=valid_mask.dtype) * valid_mask
 
         teacher_sampled_log_probs = kwargs.get("teacher_sampled_log_probs", None)
         teacher_entropy = kwargs.get("teacher_entropy", None)
@@ -1499,8 +1430,11 @@ def compute_outcome_aligned_logit_opd_advantage(
             (
                 prefix_weights,
                 excess_surprisal,
-                window_excess,
+                candidate_support,
+                window_support,
+                window_log_support_drop,
                 prefix_cusum,
+                prefix_baseline_support,
                 prefix_horizons,
                 prefix_triggered,
             ) = _pt_oal_prefix_trust_weights(
@@ -1512,43 +1446,30 @@ def compute_outcome_aligned_logit_opd_advantage(
         else:
             prefix_weights = mask
             excess_surprisal = torch.zeros_like(mask)
-            window_excess = torch.zeros_like(mask)
+            if teacher_sampled_log_probs is not None and teacher_entropy is not None:
+                candidate_support = (
+                    torch.exp(
+                        -torch.relu(
+                            -teacher_sampled_log_probs.to(dtype=mask.dtype)
+                            - teacher_entropy.to(dtype=mask.dtype)
+                        )
+                    )
+                    * mask
+                )
+            else:
+                candidate_support = mask
+            window_support = candidate_support
+            window_log_support_drop = torch.zeros_like(mask)
             prefix_cusum = torch.zeros_like(mask)
+            prefix_baseline_support = candidate_support
             prefix_horizons = response_mask.sum(dim=-1).long()
             prefix_triggered = torch.zeros_like(prefix_horizons, dtype=mask.dtype)
 
-        aligned_boost_alpha = oal_cfg["aligned_boost_alpha"]
-        if teacher_entropy is None:
-            raise ValueError("PT-OAL aligned boost requires teacher_entropy.")
-
-        if keep_mask.dim() == 3:
-            teacher_candidate_log_probs = kwargs.get("teacher_candidate_log_probs", None)
-            if teacher_candidate_log_probs is None:
-                raise ValueError(
-                    "Top-k PT-OAL aligned boost requires teacher_candidate_log_probs."
-                )
-            candidate_excess_surprisal = (
-                -teacher_candidate_log_probs.to(dtype=mask.dtype)
-                - teacher_entropy.to(dtype=mask.dtype).unsqueeze(-1)
-            )
-            candidate_support = torch.exp(-torch.relu(candidate_excess_surprisal)) * valid_mask
-            aligned_candidate_mask = pos_align_mask + neg_align_mask
-            aligned_boost = 1.0 + aligned_boost_alpha * candidate_support * aligned_candidate_mask
-            keep_mask = keep_mask * aligned_boost * prefix_weights.unsqueeze(-1)
+        if outcome_weights.dim() == 3:
+            keep_mask = outcome_weights * prefix_weights.unsqueeze(-1)
             token_keep_mask = (keep_mask.sum(dim=-1) > 0).to(dtype=mask.dtype) * mask
         else:
-            if teacher_sampled_log_probs is None:
-                raise ValueError(
-                    "Sampled-token PT-OAL aligned boost requires teacher_sampled_log_probs."
-                )
-            candidate_excess_surprisal = (
-                -teacher_sampled_log_probs.to(dtype=mask.dtype)
-                - teacher_entropy.to(dtype=mask.dtype)
-            )
-            candidate_support = torch.exp(-torch.relu(candidate_excess_surprisal)) * valid_mask
-            aligned_candidate_mask = pos_align_mask + neg_align_mask
-            aligned_boost = 1.0 + aligned_boost_alpha * candidate_support * aligned_candidate_mask
-            keep_mask = keep_mask * aligned_boost * prefix_weights
+            keep_mask = outcome_weights * prefix_weights
             token_keep_mask = (keep_mask > 0).to(dtype=mask.dtype) * mask
 
         advantages = dense_advantages * keep_mask
@@ -1559,27 +1480,28 @@ def compute_outcome_aligned_logit_opd_advantage(
         "oal_token_keep_mask": token_keep_mask.detach(),
         "oal_outcome_scores": outcome_scores.detach(),
         "oal_correct_mask": correct.to(dtype=mask.dtype).detach(),
+        "oal_group_outcome_advantage": group_outcome_advantage.detach(),
+        "oal_normalized_logit_delta": normalized_delta.detach(),
+        "oal_outcome_alignment": outcome_alignment.detach(),
+        "oal_conflict_score": conflict_score.detach(),
+        "oal_outcome_weights": outcome_weights.detach(),
         "oal_pos_align_mask": pos_align_mask.detach(),
         "oal_pos_anti_mask": pos_anti_mask.detach(),
         "oal_neg_align_mask": neg_align_mask.detach(),
         "oal_neg_anti_mask": neg_anti_mask.detach(),
         "oal_token_weights": keep_mask.detach(),
-        "oal_anti_beta": torch.full_like(outcome_scores, anti_beta).detach(),
         "pt_oal_prefix_weights": prefix_weights.detach(),
         "pt_oal_excess_surprisal": excess_surprisal.detach(),
-        "pt_oal_window_excess": window_excess.detach(),
+        "pt_oal_candidate_support": candidate_support.detach(),
+        "pt_oal_window_support": window_support.detach(),
+        "pt_oal_window_log_support_drop": window_log_support_drop.detach(),
+        # Legacy alias retained so older dashboards do not fail.
+        "pt_oal_window_excess": window_log_support_drop.detach(),
         "pt_oal_cusum": prefix_cusum.detach(),
+        "pt_oal_baseline_support": prefix_baseline_support.detach(),
         "pt_oal_horizon": prefix_horizons.to(dtype=mask.dtype).detach(),
         "pt_oal_triggered": prefix_triggered.detach(),
-        "pt_oal_candidate_support": candidate_support.detach(),
-        "pt_oal_aligned_boost": aligned_boost.detach(),
-        "pt_oal_aligned_boost_alpha": torch.full_like(outcome_scores, aligned_boost_alpha).detach(),
     }
-    if position_weights is not None:
-        extra_metrics["oal_position_weights"] = position_weights.detach()
-    if position_aligned_mask is not None:
-        extra_metrics["oal_position_aligned_mask"] = position_aligned_mask.detach()
-        extra_metrics["oal_position_anti_mask"] = position_anti_mask.detach()
     return advantages, returns, extra_metrics
 
 

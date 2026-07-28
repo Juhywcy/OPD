@@ -1,12 +1,9 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  18 JUL 2026 01:50
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  23 JUL 2026 01:13
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**/Users/bytedance/Library/CloudStorage/OneDrive-个人/drpaper/OPD/OPD/paper/O
-AL/LaTeX/anonymous-submission-latex-2026.tex
-
-(/Users/bytedance/Library/CloudStorage/OneDrive-个人/drpaper/OPD/OPD/paper/OA
-L/LaTeX/anonymous-submission-latex-2026.tex
+**anonymous-submission-latex-2026.tex
+(./anonymous-submission-latex-2026.tex
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
 (/usr/local/texlive/2025/texmf-dist/tex/latex/base/article.cls
@@ -247,12 +244,8 @@ LaTeX Font Info:    Trying to load font information for TS1+ptm on input line 1
 
 (/usr/local/texlive/2025/texmf-dist/tex/latex/psnfss/ts1ptm.fd
 File: ts1ptm.fd 2001/06/04 font definitions for TS1/ptm.
-)
-Underfull \hbox (badness 1946) in paragraph at lines 18--19
-\OT1/ptm/m/n/10 rect-ness to par-ti-tion dense teacher pref-er-ences into
- []
-
-) (./sections/related_work.tex
+))
+(./sections/related_work.tex
 
 ) (./sections/theoretical_motivation.tex
 LaTeX Font Info:    Trying to load font information for U+msa on input line 7.
@@ -291,44 +284,39 @@ File: figures/pov_comparison.pdf Graphic file (type pdf)
 <use figures/pov_comparison.pdf>
 Package pdftex.def Info: figures/pov_comparison.pdf  used on input line 3.
 (pdftex.def)             Requested size: 505.89pt x 295.35268pt.
+)
+
+[3]
 
 
-[3])
-
-
-Underfull \hbox (badness 1377) in paragraph at lines 128--129
-\OT1/ptm/m/n/10 Among outcome-aligned can-di-dates, POV-OPD gives a
- []
+Underfull \vbox (badness 7907) has occurred while \output is active []
 
 
 
-[4]) (./sections/experiments.tex (./sections/experiment_values.tex)
+[4 <./figures/pov_comparison.pdf>]
 
+) (./sections/experiments.tex (./sections/experiment_values.tex)
 (./sections/results_table.tex)
-Underfull \hbox (badness 2744) in paragraph at lines 11--12
-\OT1/ptm/m/n/10 from JustRL-1.5B; (3) DeepSeek-R1-Distill-Qwen-1.5B
- []
-
-
-Underfull \hbox (badness 1968) in paragraph at lines 11--12
-\OT1/ptm/m/n/10 R1-Distill-Qwen-7B dis-tilled from Skywork-OR1-Math-
+Underfull \hbox (badness 1337) in paragraph at lines 11--12
+\OT1/ptm/m/n/10 and con-sider four con-fig-u-ra-tions: (1) Qwen3-1.7B dis-
  []
 
 
 
-[5 <./figures/pov_comparison.pdf>]
-Underfull \hbox (badness 1859) in paragraph at lines 14--15
-\OT1/ptm/m/n/10 AMC23 (AMC), AIME 2024 (AIME24), AIME 2025
- []
-
-
+[5]
 Underfull \hbox (badness 1990) in paragraph at lines 21--22
 \OT1/ptm/m/n/10 POV-OPD is a con-sis-tent im-prove-ment over OPD on
  []
 
-
-
 (./sections/gradient_experiments.tex
+Underfull \vbox (badness 1442) has occurred while \output is active []
+
+
+
+
+Underfull \vbox (badness 10000) has occurred while \output is active []
+
+
 
 [6]))
 Underfull \hbox (badness 1635) in paragraph at lines 26--45
@@ -342,34 +330,45 @@ Underfull \hbox (badness 2600) in paragraph at lines 26--45
  up-date as $\OML/cmm/m/it/10 g[] \OT1/cmr/m/n/10 =
  []
 
-
-
 (./anonymous-submission-latex-2026.bbl
-Underfull \hbox (badness 2608) in paragraph at lines 53--56
+
+
+Underfull \hbox (badness 2608) in paragraph at lines 73--76
 []\OT1/ptm/m/n/10 Page, E. S. 1954.  Con-tin-u-ous In-spec-tion Schemes.
  []
 
 
-Underfull \hbox (badness 1838) in paragraph at lines 97--100
+
+[7]
+Underfull \hbox (badness 4291) in paragraph at lines 123--126
+[]\OT1/ptm/m/n/10 Yang, A.; et al. 2025.  Qwen3 Tech-ni-cal Re-port.
+ []
+
+
+Underfull \hbox (badness 1838) in paragraph at lines 134--137
 []\OT1/ptm/m/n/10 Zelikman, E.; Wu, Y.; Mu, J.; and Good-man, N. D.
  []
 
 )
 
-[7] (./anonymous-submission-latex-2026.aux)
+
+
+[8
+
+] (./anonymous-submission-latex-2026.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 4744 strings out of 473190
- 77820 string characters out of 5715800
- 499280 words of memory out of 5000000
- 27916 multiletter control sequences out of 15000+600000
+ 4763 strings out of 473190
+ 77962 string characters out of 5715800
+ 496688 words of memory out of 5000000
+ 27936 multiletter control sequences out of 15000+600000
  585406 words of font info for 88 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 57i,17n,65p,1872b,420s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 57i,17n,65p,1786b,420s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/fontawesome5/FontAweso
 me5Free-Solid.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfon
 ts/cm/cmbx10.pfb></usr/local/texlive/2025/texmf-dist/fonts/type1/public/amsfont
@@ -399,10 +398,10 @@ live/2025/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local
 /texlive/2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2
 025/texmf-dist/fonts/type1/urw/times/utmr8a.pfb></usr/local/texlive/2025/texmf-
 dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on anonymous-submission-latex-2026.pdf (7 pages, 407719 bytes).
+Output written on anonymous-submission-latex-2026.pdf (8 pages, 404661 bytes).
 PDF statistics:
- 248 PDF objects out of 1000 (max. 8388607)
- 168 compressed objects within 2 object streams
+ 251 PDF objects out of 1000 (max. 8388607)
+ 170 compressed objects within 2 object streams
  0 named destinations out of 1000 (max. 500000)
  6 words of extra memory for PDF output out of 10000 (max. 10000000)
 

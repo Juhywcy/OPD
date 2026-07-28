@@ -1,34 +1,34 @@
 \begin{table*}[t]
 \centering
 \small
-\caption{Main results and compact mechanism audit. Panel (a) compares four student--teacher configurations; entries are percentages. Panels (b)--(d) use DeepSeek-R1-Distill-Qwen-1.5B with JustRL-1.5B. O/P/S denote outcome validation, prefix validation, and teacher-supported boosting. Panel (c) compares gradients on rollout set $A$ with an independent outcome-gradient reference from rollout set $B$ on the same prompts. ``Neg.'' and ``Zero'' denote negative-cosine and near-zero candidate-gradient rates, respectively.}
+\caption{Main results and compact mechanism audit. Panel (a) compares four student--teacher configurations; entries are percentages. Panels (b)--(d) use DeepSeek-R1-Distill-Qwen-1.5B with JustRL-1.5B. O/P/S denote outcome validation, prefix validation, and teacher-supported boosting. Panel (c) compares gradients on rollout set $A$ with an independent outcome-gradient reference from rollout set $B$ on the same prompts. ``Neg.'' and ``Zero'' denote negative-cosine and near-zero method-gradient rates, respectively.}
 \label{tab:main-results}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{llcccccccccccc}
+\begin{tabular}{llcccccccc}
 \hline
-\textbf{Student / Teacher} & \textbf{Method} & \multicolumn{2}{c}{\textbf{AMC}} & \multicolumn{2}{c}{\textbf{AIME24}} & \multicolumn{2}{c}{\textbf{AIME25}} & \multicolumn{2}{c}{\textbf{MATH}} & \multicolumn{2}{c}{\textbf{GPQA}} & \multicolumn{2}{c}{\textbf{Minerva}} \\
-\cline{3-14}
-& & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 \\
+\textbf{Student / Teacher} & \textbf{Method} & \multicolumn{2}{c}{\textbf{AMC}} & \multicolumn{2}{c}{\textbf{AIME24}} & \multicolumn{2}{c}{\textbf{AIME25}} & \multicolumn{2}{c}{\textbf{GPQA}} \\
+\cline{3-10}
+& & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 & Avg@8 & Best@8 \\
 \hline
 Qwen3-1.7B / Qwen3-4B-T
-& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- \\
 \hline
 DS-R1-Qwen-1.5B / JustRL-1.5B
-& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- \\
 \hline
 DS-R1-Qwen-1.5B / Skywork-OR1-7B
-& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- \\
 \hline
 DS-R1-Qwen-7B / Skywork-OR1-7B
-& GRPO & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& OPD & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
-& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+& GRPO & -- & -- & -- & -- & -- & -- & -- & -- \\
+& OPD & -- & -- & -- & -- & -- & -- & -- & -- \\
+& \textbf{POV-OPD} & -- & -- & -- & -- & -- & -- & -- & -- \\
 \hline
 \end{tabular}%
 }

@@ -3,44 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: anonymous-submission-latex-2026.aux
 The style file: aaai2026.bst
 Database file #1: aaai2026.bib
-You've used 14 entries,
+You've used 20 entries,
             2840 wiz_defined-function locations,
-            651 strings with 7534 characters,
-and the built_in function-call counts, 10442 in all, are:
-= -- 711
-> -- 898
+            675 strings with 8688 characters,
+and the built_in function-call counts, 14776 in all, are:
+= -- 1010
+> -- 1283
 < -- 0
-+ -- 332
-- -- 319
-* -- 879
-:= -- 1859
-add.period$ -- 56
-call.type$ -- 14
-change.case$ -- 155
-chr.to.int$ -- 15
-cite$ -- 14
-duplicate$ -- 583
-empty$ -- 481
-format.name$ -- 354
-if$ -- 1864
-int.to.chr$ -- 1
++ -- 476
+- -- 456
+* -- 1237
+:= -- 2650
+add.period$ -- 80
+call.type$ -- 20
+change.case$ -- 221
+chr.to.int$ -- 21
+cite$ -- 20
+duplicate$ -- 820
+empty$ -- 667
+format.name$ -- 506
+if$ -- 2633
+int.to.chr$ -- 2
 int.to.str$ -- 1
-missing$ -- 150
-newline$ -- 74
-num.names$ -- 56
-pop$ -- 353
+missing$ -- 210
+newline$ -- 104
+num.names$ -- 80
+pop$ -- 490
 preamble$ -- 1
-purify$ -- 153
+purify$ -- 219
 quote$ -- 0
-skip$ -- 264
+skip$ -- 370
 stack$ -- 0
-substring$ -- 179
-swap$ -- 323
+substring$ -- 245
+swap$ -- 451
 text.length$ -- 0
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 123
+type$ -- 177
 warning$ -- 0
-while$ -- 58
+while$ -- 82
 width$ -- 0
-write$ -- 172
+write$ -- 244

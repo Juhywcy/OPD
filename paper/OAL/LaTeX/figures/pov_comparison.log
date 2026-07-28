@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  17 JUL 2026 17:57
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2026.6.25)  22 JUL 2026 02:13
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -740,91 +740,120 @@ LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.40997> not available
 LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.15> not available
 (Font)              size <5> substituted on input line 161.
 
+LaTeX Font Info:    Calculating math sizes for size <9.2> on input line 170.
 
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.34999> not available
-(Font)              size <5> substituted on input line 169.
-
-
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <6.5> not available
-(Font)              size <6> substituted on input line 176.
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <6.43996> not available
+(Font)              size <6> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.54997> not available
-(Font)              size <5> substituted on input line 176.
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <4.59999> not available
+(Font)              size <5> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.25> not available
-(Font)              size <5> substituted on input line 176.
-
-LaTeX Font Info:    Calculating math sizes for size <8.5> on input line 227.
-
-LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <8.5> not available
-(Font)              size <8> substituted on input line 227.
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <6.43996> not available
+(Font)              size <6> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <4.25> not available
-(Font)              size <5> substituted on input line 227.
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <4.59999> not available
+(Font)              size <5> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <8.5> not available
-(Font)              size <8> substituted on input line 227.
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <6.43996> not available
+(Font)              size <6> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <4.25> not available
-(Font)              size <5> substituted on input line 227.
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <4.59999> not available
+(Font)              size <5> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <8.5> not available
-(Font)              size <8> substituted on input line 227.
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <6.43996> not available
+(Font)              size <6> substituted on input line 170.
 
 
-LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <4.25> not available
-(Font)              size <5> substituted on input line 227.
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.59999> not available
+(Font)              size <5> substituted on input line 170.
 
-
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <8.5> not available
-(Font)              size <8> substituted on input line 227.
-
-
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.25> not available
-(Font)              size <5> substituted on input line 227.
-
-
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.45> not available
-(Font)              size <5> substituted on input line 229.
-
-
-LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.3> not available
-(Font)              size <5> substituted on input line 235.
-
-LaTeX Font Info:    Calculating math sizes for size <6.7> on input line 239.
+LaTeX Font Info:    Calculating math sizes for size <6.7> on input line 208.
 
 LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <3.34999> not available
-(Font)              size <5> substituted on input line 239.
+(Font)              size <5> substituted on input line 208.
 
 
 LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <3.34999> not available
-(Font)              size <5> substituted on input line 239.
+(Font)              size <5> substituted on input line 208.
 
 
 LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <3.34999> not available
-(Font)              size <5> substituted on input line 239.
+(Font)              size <5> substituted on input line 208.
 
 
 LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.34999> not available
-(Font)              size <5> substituted on input line 239.
+(Font)              size <5> substituted on input line 208.
+
+LaTeX Font Info:    Calculating math sizes for size <8.5> on input line 228.
+
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <8.5> not available
+(Font)              size <8> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/m/n' in size <4.25> not available
+(Font)              size <5> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <8.5> not available
+(Font)              size <8> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OML/cmm/m/it' in size <4.25> not available
+(Font)              size <5> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <8.5> not available
+(Font)              size <8> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OMS/cmsy/m/n' in size <4.25> not available
+(Font)              size <5> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <8.5> not available
+(Font)              size <8> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.25> not available
+(Font)              size <5> substituted on input line 228.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.45> not available
+(Font)              size <5> substituted on input line 230.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.3> not available
+(Font)              size <5> substituted on input line 236.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <6.5> not available
+(Font)              size <6> substituted on input line 251.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.54997> not available
+(Font)              size <5> substituted on input line 251.
+
+
+LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.25> not available
+(Font)              size <5> substituted on input line 251.
 
 
 LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <4.47997> not available
-(Font)              size <5> substituted on input line 274.
+(Font)              size <5> substituted on input line 275.
 
 
 LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.2> not available
-(Font)              size <5> substituted on input line 274.
+(Font)              size <5> substituted on input line 275.
 
 
 LaTeX Font Warning: Font shape `OT1/cmr/bx/n' in size <3.8> not available
-(Font)              size <5> substituted on input line 311.
+(Font)              size <5> substituted on input line 312.
 
 
 
@@ -848,11 +877,11 @@ LaTeX Font Warning: Size substitutions with differences
 
  ) 
 Here is how much of TeX's memory you used:
- 18215 strings out of 473190
- 382221 string characters out of 5715800
- 823438 words of memory out of 5000000
- 41146 multiletter control sequences out of 15000+600000
- 619955 words of font info for 214 fonts, out of 8000000 for 9000
+ 18242 strings out of 473190
+ 382699 string characters out of 5715800
+ 825093 words of memory out of 5000000
+ 41173 multiletter control sequences out of 15000+600000
+ 622386 words of font info for 224 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  117i,9n,121p,518b,670s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/local/texlive/2025/texmf-dist/fonts/type1/public/fontawesome5/FontAweso
@@ -876,7 +905,7 @@ xlive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></usr/local/texl
 ive/2025/texmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/local/texlive/2025/t
 exmf-dist/fonts/type1/urw/times/utmr8a.pfb>
 Output written on /Users/bytedance/Library/CloudStorage/OneDrive-个人/drpaper
-/OPD/OPD/paper/OAL/LaTeX/figures/pov_comparison.pdf (1 page, 244062 bytes).
+/OPD/OPD/paper/OAL/LaTeX/figures/pov_comparison.pdf (1 page, 242837 bytes).
 PDF statistics:
  117 PDF objects out of 1000 (max. 8388607)
  72 compressed objects within 1 object stream

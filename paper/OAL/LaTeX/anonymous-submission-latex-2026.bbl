@@ -1,4 +1,4 @@
-\begin{thebibliography}{14}
+\begin{thebibliography}{20}
 \providecommand{\natexlab}[1]{#1}
 
 \bibitem[{Basseville and Nikiforov(1993)}]{basseville1993detection}
@@ -19,6 +19,21 @@ Christiano, P.~F.; Leike, J.; Brown, T.~B.; Martic, M.; Legg, S.; and Amodei,
   Reinforcement Learning.
 \newblock arXiv:2501.12948.
 
+\bibitem[{He et~al.(2025{\natexlab{a}})He, Qu, Liu, Chen, Zuo, Qian, Zhang,
+  Chen, Xiao, Cui, Ding, and Liu}]{he2025justrl}
+He, B.; Qu, Z.; Liu, Z.; Chen, Y.; Zuo, Y.; Qian, C.; Zhang, K.; Chen, W.;
+  Xiao, C.; Cui, G.; Ding, N.; and Liu, Z. 2025{\natexlab{a}}.
+\newblock {JustRL}: Scaling a 1.5B {LLM} with a Simple {RL} Recipe.
+\newblock arXiv:2512.16649.
+
+\bibitem[{He et~al.(2025{\natexlab{b}})He, Liu, Liu, Yan, Wang, Cheng, Zhang,
+  Zhang, Xu, Shen, Li, Zeng, Wei, Cheng, An, Liu, and Zhou}]{he2025skyworkor1}
+He, J.; Liu, J.; Liu, C.~Y.; Yan, R.; Wang, C.; Cheng, P.; Zhang, X.; Zhang,
+  F.; Xu, J.; Shen, W.; Li, S.; Zeng, L.; Wei, T.; Cheng, C.; An, B.; Liu, Y.;
+  and Zhou, Y. 2025{\natexlab{b}}.
+\newblock {Skywork Open Reasoner 1} Technical Report.
+\newblock arXiv:2505.22312.
+
 \bibitem[{Hinton, Vinyals, and Dean(2015)}]{hinton2015distilling}
 Hinton, G.; Vinyals, O.; and Dean, J. 2015.
 \newblock Distilling the Knowledge in a Neural Network.
@@ -38,6 +53,11 @@ Lightman, H.; Kosaraju, V.; Burda, Y.; Edwards, H.; Baker, B.; Lee, T.; Leike,
   J.; Schulman, J.; Sutskever, I.; and Cobbe, K. 2023.
 \newblock Let's Verify Step by Step.
 \newblock arXiv:2305.20050.
+
+\bibitem[{{Mathematical Association of America}(2025)}]{maa2025competitions}
+{Mathematical Association of America}. 2025.
+\newblock {MAA} Invitational Competitions.
+\newblock \url{https://maa.org/maa-invitational-competitions/}.
 
 \bibitem[{Ouyang et~al.(2022)Ouyang, Wu, Jiang, Almeida, Wainwright, Mishkin,
   Zhang, Agarwal, Slama, Ray, Schulman, Hilton, Kelton, Miller, Simens, Askell,
@@ -61,6 +81,13 @@ Rafailov, R.; Sharma, A.; Mitchell, E.; Ermon, S.; Manning, C.~D.; and Finn, C.
 \newblock Direct Preference Optimization: Your Language Model Is Secretly a
   Reward Model.
 \newblock arXiv:2305.18290.
+
+\bibitem[{Rein et~al.(2023)Rein, Hou, Stickland, Petty, Pang, Dirani, Michael,
+  and Bowman}]{rein2023gpqa}
+Rein, D.; Hou, B.~L.; Stickland, A.~C.; Petty, J.; Pang, R.~Y.; Dirani, J.;
+  Michael, J.; and Bowman, S.~R. 2023.
+\newblock {GPQA}: A Graduate-Level Google-Proof {Q\&A} Benchmark.
+\newblock arXiv:2311.12022.
 
 \bibitem[{Schulman et~al.(2017)Schulman, Wolski, Dhariwal, Radford, and
   Klimov}]{schulman2017proximal}
@@ -91,6 +118,16 @@ Wei, J.; Wang, X.; Schuurmans, D.; Bosma, M.; Ichter, B.; Xia, F.; Chi, E.~H.;
 \newblock Chain-of-Thought Prompting Elicits Reasoning in Large Language
   Models.
 \newblock arXiv:2201.11903.
+
+\bibitem[{Yang et~al.(2025)}]{yang2025qwen3}
+Yang, A.; et~al. 2025.
+\newblock {Qwen3} Technical Report.
+\newblock arXiv:2505.09388.
+
+\bibitem[{Yu et~al.(2025)}]{yu2025dapo}
+Yu, Q.; et~al. 2025.
+\newblock {DAPO}: An Open-Source {LLM} Reinforcement Learning System at Scale.
+\newblock arXiv:2503.14476.
 
 \bibitem[{Zelikman et~al.(2022)Zelikman, Wu, Mu, and
   Goodman}]{zelikman2022star}

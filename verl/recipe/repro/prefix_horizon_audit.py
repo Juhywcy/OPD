@@ -57,6 +57,8 @@ def main() -> None:
         "reference_valid_batches": len(valid_batches),
         "trajectory_count": len(all_trajectories),
         "reference_valid_trajectory_count": len(valid_trajectories),
+        "half_trust_trajectory_count": triggered_count,
+        "half_trust_rate": triggered_count / len(all_trajectories) if all_trajectories else None,
         "triggered_trajectory_count": triggered_count,
         "trigger_rate": triggered_count / len(all_trajectories) if all_trajectories else None,
         "reference_valid_triggered_trajectory_count": eligible_triggered_count,

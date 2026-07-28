@@ -1526,16 +1526,39 @@ class RayPPOTrainer:
                             valid_candidates = candidate_mask.sum().clamp_min(1)
                             positive_candidates = ((token_level_rewards > 0).float() * candidate_mask).sum()
                             negative_candidates = ((token_level_rewards < 0).float() * candidate_mask).sum()
-                            metrics["oal/kept_candidate_ratio"] = (keep_mask.sum() / valid_candidates).item()
+                            final_weight_mean = keep_mask.sum() / valid_candidates
+                            metrics["oal/final_weight_mean"] = final_weight_mean.item()
+                            # Legacy alias for existing dashboards.
+                            metrics["oal/kept_candidate_ratio"] = final_weight_mean.item()
                             metrics["oal/positive_candidate_ratio"] = (positive_candidates / valid_candidates).item()
                             metrics["oal/negative_candidate_ratio"] = (negative_candidates / valid_candidates).item()
                             metrics["oal/token_keep_ratio"] = (
                                 token_keep_mask.sum() / response_mask.float().sum().clamp_min(1)
                             ).item()
-                            metrics["oal/correct_response_ratio"] = batch.batch["oal_correct_mask"].float().mean().item()
+                            metrics["oal/correct_response_ratio"] = (
+                                batch.batch["oal_correct_mask"].float().mean().item()
+                            )
                             metrics["oal/outcome_score_mean"] = batch.batch["oal_outcome_scores"].float().mean().item()
-                            if "oal_anti_beta" in batch.batch.keys():
-                                metrics["oal/anti_beta"] = batch.batch["oal_anti_beta"].float().mean().item()
+                            if "oal_group_outcome_advantage" in batch.batch.keys():
+                                group_advantage = batch.batch["oal_group_outcome_advantage"].float()
+                                metrics["oal/group_outcome_advantage_mean"] = group_advantage.mean().item()
+                                metrics["oal/group_outcome_advantage_abs_mean"] = group_advantage.abs().mean().item()
+                                metrics["oal/informative_outcome_response_ratio"] = (
+                                    group_advantage.abs() > 0
+                                ).float().mean().item()
+                            if "oal_outcome_weights" in batch.batch.keys():
+                                outcome_weights = batch.batch["oal_outcome_weights"].float()
+                                valid_outcome_weights = outcome_weights[candidate_mask > 0]
+                                metrics["oal/outcome_weight_mean"] = valid_outcome_weights.mean().item()
+                                metrics["oal/outcome_weight_min"] = valid_outcome_weights.min().item()
+                            if "oal_conflict_score" in batch.batch.keys():
+                                conflict_score = batch.batch["oal_conflict_score"].float()
+                                metrics["oal/conflict_score_mean"] = (
+                                    (conflict_score * candidate_mask).sum() / valid_candidates
+                                ).item()
+                                metrics["oal/conflicting_candidate_ratio"] = (
+                                    ((conflict_score > 0).float() * candidate_mask).sum() / valid_candidates
+                                ).item()
                             if "pt_oal_prefix_weights" in batch.batch.keys():
                                 valid_tokens = response_mask.float().sum().clamp_min(1)
                                 response_lens = response_mask.float().sum(dim=-1).clamp_min(1)
@@ -1546,23 +1569,35 @@ class RayPPOTrainer:
                                 metrics["pt_oal/horizon_ratio_mean"] = (
                                     prefix_horizon / response_lens
                                 ).clamp(0.0, 1.0).mean().item()
+                                metrics["pt_oal/half_trust_reached_ratio"] = prefix_triggered.mean().item()
+                                # Legacy aliases: "triggered" now means reaching half trust and is diagnostic only.
                                 metrics["pt_oal/triggered_ratio"] = prefix_triggered.mean().item()
                                 metrics["pt_oal/never_triggered_ratio"] = (1.0 - prefix_triggered).mean().item()
                                 metrics["pt_oal/prefix_weight_mean"] = (
                                     (prefix_weights * response_mask).sum() / valid_tokens
                                 ).item()
+                                valid_prefix_weights = prefix_weights[response_mask > 0]
+                                metrics["pt_oal/prefix_weight_min"] = valid_prefix_weights.min().item()
                                 metrics["pt_oal/excess_surprisal_mean"] = (
                                     (batch.batch["pt_oal_excess_surprisal"].float() * response_mask).sum()
                                     / valid_tokens
                                 ).item()
-                                metrics["pt_oal/window_excess_mean"] = (
-                                    (batch.batch["pt_oal_window_excess"].float() * response_mask).sum()
+                                metrics["pt_oal/window_log_support_drop_mean"] = (
+                                    (
+                                        batch.batch["pt_oal_window_log_support_drop"].float()
+                                        * response_mask
+                                    ).sum()
                                     / valid_tokens
                                 ).item()
+                                metrics["pt_oal/window_excess_mean"] = metrics[
+                                    "pt_oal/window_log_support_drop_mean"
+                                ]
                                 metrics["pt_oal/cusum_mean"] = (
                                     (batch.batch["pt_oal_cusum"].float() * response_mask).sum()
                                     / valid_tokens
                                 ).item()
+                                valid_cusum = batch.batch["pt_oal_cusum"].float()[response_mask > 0]
+                                metrics["pt_oal/cusum_max"] = valid_cusum.max().item()
                                 positions_pt = torch.arange(
                                     response_mask.shape[-1], device=response_mask.device
                                 ).unsqueeze(0)
@@ -1576,65 +1611,26 @@ class RayPPOTrainer:
                                     (prefix_weights * suffix_mask).sum() / suffix_count
                                 ).item()
                                 candidate_support = batch.batch["pt_oal_candidate_support"].float()
-                                aligned_boost = batch.batch["pt_oal_aligned_boost"].float()
-                                aligned_mask = (
-                                    batch.batch["oal_pos_align_mask"].float()
-                                    + batch.batch["oal_neg_align_mask"].float()
-                                )
-                                aligned_count = aligned_mask.sum().clamp_min(1)
-                                metrics["pt_oal/aligned_boost_alpha"] = (
-                                    batch.batch["pt_oal_aligned_boost_alpha"].float().mean().item()
-                                )
                                 metrics["pt_oal/candidate_support_mean"] = (
-                                    (candidate_support * candidate_mask).sum() / valid_candidates
+                                    (candidate_support * response_mask).sum() / valid_tokens
                                 ).item()
-                                metrics["pt_oal/aligned_support_mean"] = (
-                                    (candidate_support * aligned_mask).sum() / aligned_count
+                                metrics["pt_oal/window_support_mean"] = (
+                                    (
+                                        batch.batch["pt_oal_window_support"].float()
+                                        * response_mask
+                                    ).sum()
+                                    / valid_tokens
                                 ).item()
-                                metrics["pt_oal/aligned_boost_mean"] = (
-                                    (aligned_boost * aligned_mask).sum() / aligned_count
-                                ).item()
-                                metrics["pt_oal/aligned_weight_above_one_ratio"] = (
-                                    ((keep_mask > 1.0).float() * aligned_mask).sum() / aligned_count
+                                metrics["pt_oal/baseline_support_mean"] = (
+                                    (
+                                        batch.batch["pt_oal_baseline_support"].float()
+                                        * response_mask
+                                    ).sum()
+                                    / valid_tokens
                                 ).item()
                                 valid_final_weights = keep_mask[candidate_mask > 0]
                                 if valid_final_weights.numel() > 0:
                                     metrics["pt_oal/max_final_weight"] = valid_final_weights.max().item()
-                                if keep_mask.dim() == 3:
-                                    prefix_for_candidates = prefix_weights.unsqueeze(-1)
-                                else:
-                                    prefix_for_candidates = prefix_weights
-                                extra_boost_mass = (
-                                    token_level_rewards.float().abs()
-                                    * prefix_for_candidates
-                                    * (aligned_boost - 1.0)
-                                    * aligned_mask
-                                ).sum()
-                                dense_mass_for_boost = (
-                                    token_level_rewards.float().abs() * candidate_mask
-                                ).sum().clamp_min(1e-6)
-                                metrics["pt_oal/boosted_adv_mass_ratio"] = (
-                                    extra_boost_mass / dense_mass_for_boost
-                                ).item()
-                            split_mode = self.config.algorithm.get("pt_oal", {}).get("split_mode", "oal")
-                            weight_mode = self.config.algorithm.get("pt_oal", {}).get("weight_mode", "hard")
-                            split_mode_to_id = {
-                                "oal": 0,
-                                "align": 0,
-                                "anti": 1,
-                                "all": 2,
-                                "pos_align": 3,
-                                "pos_anti": 4,
-                                "neg_align": 5,
-                                "neg_anti": 6,
-                            }
-                            metrics["oal/split_mode_id"] = split_mode_to_id.get(split_mode, -1)
-                            metrics["oal/weight_mode_id"] = {
-                                "hard": 0,
-                                "rank": 1,
-                                "position_rank": 2,
-                                "position_hard": 3,
-                            }.get(weight_mode, -1)
                             token_weights = None
                             if "oal_token_weights" in batch.batch.keys():
                                 token_weights = batch.batch["oal_token_weights"].float()
@@ -1643,7 +1639,9 @@ class RayPPOTrainer:
                                     metrics["oal/token_weight_mean"] = valid_weights.mean().item()
                                     metrics["oal/token_weight_min"] = valid_weights.min().item()
                                     metrics["oal/token_weight_max"] = valid_weights.max().item()
-                                    metrics["oal/token_weight_nonzero_ratio"] = (valid_weights > 0).float().mean().item()
+                                    metrics["oal/token_weight_nonzero_ratio"] = (
+                                        (valid_weights > 0).float().mean().item()
+                                    )
                             if "oal_position_weights" in batch.batch.keys():
                                 position_weights = batch.batch["oal_position_weights"].float()
                                 valid_position_weights = position_weights[response_mask > 0]
@@ -2902,6 +2900,11 @@ class RayPPOTrainer:
                         "oal_token_keep_mask",
                         "oal_outcome_scores",
                         "oal_correct_mask",
+                        "oal_group_outcome_advantage",
+                        "oal_normalized_logit_delta",
+                        "oal_outcome_alignment",
+                        "oal_conflict_score",
+                        "oal_outcome_weights",
                         "oal_pos_align_mask",
                         "oal_pos_anti_mask",
                         "oal_neg_align_mask",
@@ -2912,13 +2915,14 @@ class RayPPOTrainer:
                         "oal_position_anti_mask",
                         "pt_oal_prefix_weights",
                         "pt_oal_excess_surprisal",
+                        "pt_oal_window_support",
+                        "pt_oal_window_log_support_drop",
                         "pt_oal_window_excess",
                         "pt_oal_cusum",
+                        "pt_oal_baseline_support",
                         "pt_oal_horizon",
                         "pt_oal_triggered",
                         "pt_oal_candidate_support",
-                        "pt_oal_aligned_boost",
-                        "pt_oal_aligned_boost_alpha",
                         "teacher_sampled_log_probs",
                         "teacher_candidate_log_probs",
                         "logit_delta_scores",

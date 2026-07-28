@@ -15,14 +15,19 @@ parameter scope, and no optimizer is created.
 The sampled-token OPD signal is `teacher_logp - student_logp`. POV weights are
 computed by the same `compute_outcome_aligned_logit_opd_advantage` function used
 by training. The defaults mirror `scripts/train/run_prefix_trust_oal_opd.sh`:
-rank weighting, anti-beta 0.1, aligned boost 0.5, window size 128, two baseline
-blocks, drift allowance 0.1, CUSUM threshold 1.0, and decay lambda 1.0.
+leave-one-out group-relative outcome validation and threshold-free relative
+support CUSUM, with window size 128 and two baseline blocks. There is no
+outcome margin, rank weight, anti-beta, support boost, CUSUM threshold, or
+decay coefficient.
 
-`prefix_horizon_audit.py` then matches each triggered A trajectory to an
+`prefix_horizon_audit.py` then matches each half-trust A trajectory to an
 untriggered A trajectory with the same prompt and outcome class. It uses a
 fixed relative-length caliper, matches without replacement, puts the trigger
 window in the post period, and transfers the trigger's normalized position to
-the control. DID confidence intervals cluster-bootstrap by prompt.
+the control. Here the reported horizon is the first window whose continuously
+computed prefix weight reaches 0.5; this diagnostic boundary does not gate or
+otherwise affect training. DID confidence intervals cluster-bootstrap by
+prompt.
 
 ## Outputs
 
@@ -56,4 +61,3 @@ bash scripts/audit/run_pov_audits.sh
 After checking the summaries, remove the smoke-test overrides and launch the
 fixed protocol on eight GPUs. Do not use DAPO-Math-17K training rows as the
 held-out audit set.
-

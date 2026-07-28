@@ -15,8 +15,6 @@ export ADV_ESTIMATOR=${ADV_ESTIMATOR:-prefix_trust_oal_opd}
 # export ADV_ESTIMATOR=token_reward_direct_plus_grpo
 # export ADV_ESTIMATOR=token_grpo
 # export ADV_ESTIMATOR=grpo
-# export GRPO_OUTCOME_WEIGHT=1.0
-export GRPO_OUTCOME_WEIGHT=${GRPO_OUTCOME_WEIGHT:-1.0}
 # export ADV_ESTIMATOR=token_grpo
 # Swanlab setting used to continue exp  
 # export SWANLAB_RESUME=must
@@ -38,17 +36,10 @@ export TOP_K_STRATEGY=${TOP_K_STRATEGY:-"only_stu"} # "only_stu" or "only_tch" o
 export REWARD_WEIGHT_MODE=${REWARD_WEIGHT_MODE:-"student_p"} # "student_p" or "teacher_p" or "none"
 export OPD_TOPK_RENORMALIZE=${OPD_TOPK_RENORMALIZE:-True}
 export OAL_ENABLED=${OAL_ENABLED:-True}
-export OAL_MARGIN=${OAL_MARGIN:-0.0}
-export OAL_SPLIT_MODE=${OAL_SPLIT_MODE:-oal} # oal/align/anti/all/pos_align/pos_anti/neg_align/neg_anti
-export OAL_WEIGHT_MODE=${OAL_WEIGHT_MODE:-rank} # hard, rank, position_hard, or position_rank
-export OAL_ANTI_BETA=${OAL_ANTI_BETA:-0.1} # Maximum supervision weight assigned to anti-aligned candidates in rank modes.
-export PT_OAL_ALIGNED_BOOST_ALPHA=${PT_OAL_ALIGNED_BOOST_ALPHA:-0.5}
+export PT_OAL_OUTCOME_VALIDATION_ENABLED=${PT_OAL_OUTCOME_VALIDATION_ENABLED:-True}
 export PT_OAL_PREFIX_TRUST_ENABLED=${PT_OAL_PREFIX_TRUST_ENABLED:-True}
 export PT_OAL_WINDOW_SIZE=${PT_OAL_WINDOW_SIZE:-128}
 export PT_OAL_BASELINE_BLOCKS=${PT_OAL_BASELINE_BLOCKS:-2}
-export PT_OAL_DRIFT_ALLOWANCE=${PT_OAL_DRIFT_ALLOWANCE:-0.1}
-export PT_OAL_CUSUM_THRESHOLD=${PT_OAL_CUSUM_THRESHOLD:-1.0}
-export PT_OAL_DECAY_LAMBDA=${PT_OAL_DECAY_LAMBDA:-1.0}
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -122,14 +113,10 @@ export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
 export PROJECT_PATH=checkpoint
 export PARALLEL_SIZE=1
-OAL_WEIGHT_SUFFIX=""
-if [ "$OAL_WEIGHT_MODE" = "rank" ] || [ "$OAL_WEIGHT_MODE" = "position_rank" ]; then
-    OAL_WEIGHT_SUFFIX="-beta${OAL_ANTI_BETA}"
-fi
 if [ "$ADV_ESTIMATOR" = "token_reward_direct" ]; then
-    DEFAULT_RUN_NAME=OPD_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=OPD_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 else
-    DEFAULT_RUN_NAME=pt_oal_${OAL_WEIGHT_MODE}_${OAL_SPLIT_MODE}_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-margin${OAL_MARGIN}${OAL_WEIGHT_SUFFIX}-pta${PT_OAL_ALIGNED_BOOST_ALPHA}-ptw${PT_OAL_WINDOW_SIZE}-ptb${PT_OAL_BASELINE_BLOCKS}-ptd${PT_OAL_DRIFT_ALLOWANCE}-pth${PT_OAL_CUSUM_THRESHOLD}-ptl${PT_OAL_DECAY_LAMBDA}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=pov_soft-out${PT_OAL_OUTCOME_VALIDATION_ENABLED}-pre${PT_OAL_PREFIX_TRUST_ENABLED}-w${PT_OAL_WINDOW_SIZE}-b${PT_OAL_BASELINE_BLOCKS}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 fi
 export RUN_NAME=${RUN_NAME:-$DEFAULT_RUN_NAME}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
@@ -171,20 +158,12 @@ mkdir -p "validation_log/$EXPERIMENT_NAME"
 
 python3 -m verl.trainer.main_ppo_pt_oal \
     algorithm.adv_estimator=$ADV_ESTIMATOR \
-    algorithm.grpo_outcome_weight=$GRPO_OUTCOME_WEIGHT \
     +algorithm.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     +algorithm.pt_oal.enabled=$OAL_ENABLED \
-    +algorithm.pt_oal.margin=$OAL_MARGIN \
-    +algorithm.pt_oal.split_mode=$OAL_SPLIT_MODE \
-    +algorithm.pt_oal.weight_mode=$OAL_WEIGHT_MODE \
-    +algorithm.pt_oal.anti_beta=$OAL_ANTI_BETA \
-    +algorithm.pt_oal.aligned_boost_alpha=$PT_OAL_ALIGNED_BOOST_ALPHA \
+    +algorithm.pt_oal.outcome_validation_enabled=$PT_OAL_OUTCOME_VALIDATION_ENABLED \
     +algorithm.pt_oal.prefix_trust_enabled=$PT_OAL_PREFIX_TRUST_ENABLED \
     +algorithm.pt_oal.prefix_window_size=$PT_OAL_WINDOW_SIZE \
     +algorithm.pt_oal.prefix_baseline_blocks=$PT_OAL_BASELINE_BLOCKS \
-    +algorithm.pt_oal.prefix_drift_allowance=$PT_OAL_DRIFT_ALLOWANCE \
-    +algorithm.pt_oal.prefix_cusum_threshold=$PT_OAL_CUSUM_THRESHOLD \
-    +algorithm.pt_oal.prefix_decay_lambda=$PT_OAL_DECAY_LAMBDA \
     +algorithm.pt_oal.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \

@@ -44,14 +44,6 @@ CANDIDATE_NORM_THRESHOLD="${CANDIDATE_NORM_THRESHOLD:-1e-10}"
 
 PT_OAL_WINDOW_SIZE="${PT_OAL_WINDOW_SIZE:-128}"
 PT_OAL_BASELINE_BLOCKS="${PT_OAL_BASELINE_BLOCKS:-2}"
-PT_OAL_DRIFT_ALLOWANCE="${PT_OAL_DRIFT_ALLOWANCE:-0.1}"
-PT_OAL_CUSUM_THRESHOLD="${PT_OAL_CUSUM_THRESHOLD:-1.0}"
-PT_OAL_DECAY_LAMBDA="${PT_OAL_DECAY_LAMBDA:-1.0}"
-OAL_WEIGHT_MODE="${OAL_WEIGHT_MODE:-rank}"
-OAL_ANTI_BETA="${OAL_ANTI_BETA:-0.1}"
-OAL_MARGIN="${OAL_MARGIN:-0.0}"
-OAL_SPLIT_MODE="${OAL_SPLIT_MODE:-oal}"
-PT_OAL_ALIGNED_BOOST_ALPHA="${PT_OAL_ALIGNED_BOOST_ALPHA:-0.5}"
 
 LENGTH_CALIPER="${LENGTH_CALIPER:-0.20}"
 BOOTSTRAP_SAMPLES="${BOOTSTRAP_SAMPLES:-2000}"
@@ -87,14 +79,6 @@ torchrun --standalone --nproc_per_node="${NPROC_PER_NODE}" -m recipe.repro.pov_g
   --bootstrap-samples "${BOOTSTRAP_SAMPLES}" \
   --prefix-window-size "${PT_OAL_WINDOW_SIZE}" \
   --prefix-baseline-blocks "${PT_OAL_BASELINE_BLOCKS}" \
-  --prefix-drift-allowance "${PT_OAL_DRIFT_ALLOWANCE}" \
-  --prefix-cusum-threshold "${PT_OAL_CUSUM_THRESHOLD}" \
-  --prefix-decay-lambda "${PT_OAL_DECAY_LAMBDA}" \
-  --oal-margin "${OAL_MARGIN}" \
-  --oal-split-mode "${OAL_SPLIT_MODE}" \
-  --oal-weight-mode "${OAL_WEIGHT_MODE}" \
-  --oal-anti-beta "${OAL_ANTI_BETA}" \
-  --aligned-boost-alpha "${PT_OAL_ALIGNED_BOOST_ALPHA}" \
   --seed "${SEED}"
 
 python -m recipe.repro.prefix_horizon_audit \

@@ -22,23 +22,23 @@ class FigureLayoutTest(unittest.TestCase):
             "Shared rollout",
             "A^{\\mathrm{GRPO}}",
             "use peer responses",
-            "D_{t,k}=\\rho_{t,k}\\delta_{t,k}",
+            "D_t=\\ell^T_t-\\ell^\\theta_t",
             "no outcome or prefix validity check",
         ]
         self.assertTrue(all(label in self.content for label in required))
 
     def test_complete_pov_computation_is_present(self):
         required = [
-            "s_{t,k}=z_i\\delta_{t,k}",
+            "s_t=z_iD_t",
             "w^{\\mathrm{out}}",
-            "excess surprisal $u_t$",
-            "window mean $\\bar u_b$",
-            "CUSUM drift $C_b$",
-            "$b\\ge b^\\star$: monotone decay",
+            "excess surprisal\\\\$u_t$",
+            "window average\\\\$\\bar u_b$",
+            "CUSUM\\\\$C_b$",
+            "after $b^\\star$",
             "w^{\\mathrm{pre}}",
             "p^{\\mathrm{sup}}",
             "w^{\\mathrm{sup}}",
-            "A^{\\mathrm{POV}}_{t,k}=D_{t,k}",
+            "A^{\\mathrm{POV}}_t=D_t",
             "never flips",
         ]
         self.assertTrue(all(label in self.content for label in required))

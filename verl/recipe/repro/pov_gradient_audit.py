@@ -64,18 +64,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
     parser.add_argument("--prefix-window-size", type=int, default=128)
     parser.add_argument("--prefix-baseline-blocks", type=int, default=2)
-    parser.add_argument("--prefix-drift-allowance", type=float, default=0.1)
-    parser.add_argument("--prefix-cusum-threshold", type=float, default=1.0)
-    parser.add_argument("--prefix-decay-lambda", type=float, default=1.0)
-    parser.add_argument("--oal-margin", type=float, default=0.0)
-    parser.add_argument("--oal-split-mode", default="oal")
-    parser.add_argument(
-        "--oal-weight-mode",
-        choices=("hard", "rank", "position_hard", "position_rank"),
-        default="rank",
-    )
-    parser.add_argument("--oal-anti-beta", type=float, default=0.1)
-    parser.add_argument("--aligned-boost-alpha", type=float, default=0.5)
     parser.add_argument("--save-responses", action="store_true")
     return parser
 
@@ -282,29 +270,23 @@ def _gradient_stats(loss, parameters, reference_gradients, reference_norm: float
     }
 
 
-def _pov_advantages(args, raw_opd, response_mask, outcomes, teacher_log_probs, teacher_entropy):
+def _pov_advantages(args, raw_opd, response_mask, outcomes, teacher_log_probs, teacher_entropy, group_ids):
     from verl.trainer.ppo.core_algos_pt_oal import compute_outcome_aligned_logit_opd_advantage
 
     config = {
         "pt_oal": {
             "enabled": True,
-            "margin": args.oal_margin,
-            "split_mode": args.oal_split_mode,
-            "weight_mode": args.oal_weight_mode,
-            "anti_beta": args.oal_anti_beta,
-            "aligned_boost_alpha": args.aligned_boost_alpha,
+            "outcome_validation_enabled": True,
             "prefix_trust_enabled": True,
             "prefix_window_size": args.prefix_window_size,
             "prefix_baseline_blocks": args.prefix_baseline_blocks,
-            "prefix_drift_allowance": args.prefix_drift_allowance,
-            "prefix_cusum_threshold": args.prefix_cusum_threshold,
-            "prefix_decay_lambda": args.prefix_decay_lambda,
         }
     }
     advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
         token_level_rewards=raw_opd,
         response_mask=response_mask,
         config=config,
+        index=group_ids,
         true_reward_score=outcomes,
         teacher_sampled_log_probs=teacher_log_probs,
         teacher_entropy=teacher_entropy,
@@ -381,8 +363,20 @@ def _run_batch(args, model, teacher, tokenizer, dataset, batch_index: int, devic
         model, *full_a, prompt_width, response_a, temperature=args.temperature
     )
     raw_opd = (teacher_logp_a - logp_a.detach().float()) * mask_a
+    repeated_prompt_ids = [prompt_id for prompt_id in prompt_ids for _ in range(args.num_responses)]
+    outcome_group_ids = [
+        prompt_index
+        for prompt_index in range(args.batch_prompts)
+        for _ in range(args.num_responses)
+    ]
     pov_advantage, pov_extras = _pov_advantages(
-        args, raw_opd, mask_a, outcomes_a, teacher_logp_a, teacher_entropy_a
+        args,
+        raw_opd,
+        mask_a,
+        outcomes_a,
+        teacher_logp_a,
+        teacher_entropy_a,
+        outcome_group_ids,
     )
     candidate_advantages = {
         "outcome_pg": outcome_adv_a,
@@ -397,10 +391,12 @@ def _run_batch(args, model, teacher, tokenizer, dataset, batch_index: int, devic
         )
 
     trajectories = []
-    repeated_prompt_ids = [prompt_id for prompt_id in prompt_ids for _ in range(args.num_responses)]
     valid_lengths = mask_a.sum(dim=-1).tolist()
     horizons = pov_extras["pt_oal_horizon"].long().tolist()
     triggered = pov_extras["pt_oal_triggered"].bool().tolist()
+    prefix_weights = pov_extras["pt_oal_prefix_weights"]
+    prefix_cusum = pov_extras["pt_oal_cusum"]
+    window_support = pov_extras["pt_oal_window_support"]
     for trajectory_index, (prompt_id, outcome, valid_length, horizon, did_trigger) in enumerate(
         zip(repeated_prompt_ids, outcomes_a.tolist(), valid_lengths, horizons, triggered, strict=True)
     ):
@@ -424,6 +420,9 @@ def _run_batch(args, model, teacher, tokenizer, dataset, batch_index: int, devic
                     "gradient_norm": stats["gradient_norm"],
                     "near_zero": stats["near_zero"],
                     "conflict": stats["dot"] < 0.0,
+                    "prefix_weight": float(prefix_weights[trajectory_index, start].cpu()),
+                    "prefix_cusum": float(prefix_cusum[trajectory_index, start].cpu()),
+                    "teacher_support": float(window_support[trajectory_index, start].cpu()),
                 }
             )
         record = {
@@ -432,8 +431,13 @@ def _run_batch(args, model, teacher, tokenizer, dataset, batch_index: int, devic
             "outcome_class": int(outcome > 0.5),
             "response_length": int(valid_length),
             "triggered": bool(did_trigger),
+            "half_trust_reached": bool(did_trigger),
             "horizon_token": int(horizon),
             "horizon_normalized": int(horizon) / max(1, int(valid_length)),
+            "minimum_prefix_weight": min(
+                (float(window["prefix_weight"]) for window in windows),
+                default=1.0,
+            ),
             "windows": windows,
         }
         if args.save_responses:

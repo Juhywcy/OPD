@@ -98,7 +98,7 @@
 \node[text=VioletDark,font=\fontsize{8.0}{8.4}\selectfont] at (4.145,8.48) {\faChartBar};
 \node[text=white,font=\fontsize{9.2}{9.8}\bfseries] at (4.145,7.92) {OPD};
 \node[anchor=west,font=\fontsize{8.2}{9.0}\selectfont] at (5.02,8.42)
-  {$\delta_{t,k}=\ell^T_{t,k}-\ell^\theta_{t,k},\quad D_{t,k}=\rho_{t,k}\delta_{t,k}$};
+  {$D_t=\ell^T_t-\ell^\theta_t$};
 \node[anchor=west,text=Muted,font=\fontsize{6.9}{7.6}\selectfont] at (5.02,7.88)
   {dense local signal, but no outcome or prefix validity check};
 \draw[Line,line width=.45pt] (11.13,8.15)--(17.36,8.15);
@@ -113,7 +113,7 @@
   \fi
 }
 \node[anchor=east,text=VioletDark,font=\fontsize{6.5}{7.1}\bfseries] at (17.60,8.59)
-  {signed, token-varying $D_{t,k}$};
+  {signed, token-varying $D_t$};
 
 \draw[flow] (3.25,9.62)--(3.55,9.62);
 \draw[flow] (3.25,8.18)--(3.55,8.18);
@@ -129,7 +129,7 @@
 \node[anchor=west,text=white,font=\fontsize{10.0}{10.8}\bfseries] at (.78,7.035)
   {POV-OPD: validate and calibrate the dense OPD signal};
 \node[anchor=east,text=white,font=\fontsize{9.0}{9.8}\bfseries] at (17.62,7.035)
-  {$A^{\mathrm{POV}}_{t,k}=D_{t,k}\,w^{\mathrm{out}}_{t,k}\,w^{\mathrm{pre}}_{t}\,w^{\mathrm{sup}}_{t,k}$};
+  {$A^{\mathrm{POV}}_t=D_t\,w^{\mathrm{out}}_t\,w^{\mathrm{pre}}_t\,w^{\mathrm{sup}}_t$};
 
 % Outcome validity.
 \draw[subpanel,fill=GoldSoft] (.38,3.55) rectangle (5.47,6.53);
@@ -141,82 +141,83 @@
 \node[anchor=west,font=\fontsize{7.0}{7.7}\selectfont] at (.66,5.73)
   {trajectory label: $z_i=2\mathbf 1[R_i>1/2]-1$};
 \node[anchor=west,font=\fontsize{7.0}{7.7}\selectfont] at (.66,5.41)
-  {local alignment: $s_{t,k}=z_i\delta_{t,k}$};
+  {local alignment: $s_t=z_iD_t$};
 
 \draw[rounded corners=2pt,fill=GreenSoft,draw=Green,line width=.45pt]
   (.65,4.86) rectangle (5.18,5.24);
 \node[text=GreenDark,font=\fontsize{6.8}{7.4}\bfseries] at (2.915,5.05)
-  {aligned: $s_{t,k}>m\ \longrightarrow\ 1$};
+  {aligned: $s_t>m\ \longrightarrow\ 1$};
 
 \draw[rounded corners=2pt,fill=SoftGray,draw=Line,line width=.45pt]
   (.65,4.39) rectangle (5.18,4.77);
 \node[text=Muted,font=\fontsize{6.8}{7.4}\bfseries] at (2.915,4.58)
-  {ambiguous: $|s_{t,k}|\le m\ \longrightarrow\ 0$};
+  {ambiguous: $|s_t|\le m\ \longrightarrow\ 0$};
 
 \draw[rounded corners=2pt,fill=CoralSoft,draw=Coral,line width=.45pt]
   (.65,3.92) rectangle (5.18,4.30);
 \node[text=CoralDark,font=\fontsize{6.8}{7.4}\bfseries] at (2.915,4.11)
-  {conflict: $s_{t,k}<-m\ \longrightarrow\ \beta q_{t,k}$};
+  {conflict: $s_t<-m\ \longrightarrow\ \beta q_t$};
 \node[text=Muted,font=\fontsize{6.3}{6.9}\selectfont] at (2.915,3.69)
   {$q=\operatorname{rank}_{\mathcal B}(s)/(n_{\mathcal B}-1)$; $q=1$ for a singleton};
 
-% Prefix validity.
-\draw[subpanel,fill=VioletSoft] (5.72,3.55) rectangle (13.10,6.53);
-\fill[Violet,rounded corners=2pt] (5.72,6.03) rectangle (13.10,6.53);
-\iconbadge{6.06}{6.28}{white}{VioletDark}
-\node[text=VioletDark,font=\fontsize{7.5}{8.0}\selectfont] at (6.06,6.28) {\faWaveSquare};
-\node[anchor=west,text=white,font=\fontsize{8.7}{9.4}\bfseries] at (6.36,6.28)
+% Prefix validity.  This panel uses three visually separate rows so that the
+% signal construction, drift event, and resulting weight are readable at print size.
+\draw[subpanel,fill=VioletSoft] (5.62,3.55) rectangle (13.20,6.53);
+\fill[Violet,rounded corners=2pt] (5.62,6.00) rectangle (13.20,6.53);
+\iconbadge{5.98}{6.265}{white}{VioletDark}
+\node[text=VioletDark,font=\fontsize{8.0}{8.5}\selectfont] at (5.98,6.265) {\faWaveSquare};
+\node[anchor=west,text=white,font=\fontsize{9.2}{9.8}\bfseries] at (6.30,6.265)
   {2. Prefix validity $\rightarrow w^{\mathrm{pre}}$};
 
-% Step 1: a verbal evidence pipeline.  Exact definitions are given in the
-% method; the figure keeps only the objects needed to read the timeline.
-\draw[rounded corners=2pt,fill=white,draw=Line,line width=.45pt]
-  (5.91,5.40) rectangle (8.10,5.92);
-\node[text=VioletDark,font=\fontsize{6.5}{7.1}\bfseries] at (7.005,5.66)
-  {excess surprisal $u_t$};
-\draw[thinflow,color=VioletDark] (8.12,5.66)--(8.31,5.66);
-\draw[rounded corners=2pt,fill=white,draw=Line,line width=.45pt]
-  (8.34,5.40) rectangle (10.55,5.92);
-\node[text=VioletDark,font=\fontsize{6.5}{7.1}\bfseries] at (9.445,5.66)
-  {window mean $\bar u_b$};
-\draw[thinflow,color=VioletDark] (10.57,5.66)--(10.76,5.66);
-\draw[rounded corners=2pt,fill=white,draw=Line,line width=.45pt]
-  (10.79,5.40) rectangle (12.95,5.92);
-\node[text=VioletDark,font=\fontsize{6.5}{7.1}\bfseries] at (11.87,5.66)
-  {CUSUM drift $C_b$};
+% 1) Construct one drift statistic per window.
+\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.55pt]
+  (5.91,5.35) rectangle (8.03,5.88);
+\node[text=VioletDark,font=\fontsize{7.0}{7.6}\bfseries,align=center] at (6.97,5.615)
+  {excess surprisal\\$u_t$};
+\draw[thinflow,color=VioletDark,line width=.7pt] (8.06,5.615)--(8.32,5.615);
+\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.55pt]
+  (8.36,5.35) rectangle (10.48,5.88);
+\node[text=VioletDark,font=\fontsize{7.0}{7.6}\bfseries,align=center] at (9.42,5.615)
+  {window average\\$\bar u_b$};
+\draw[thinflow,color=VioletDark,line width=.7pt] (10.51,5.615)--(10.77,5.615);
+\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.55pt]
+  (10.81,5.35) rectangle (12.93,5.88);
+\node[text=VioletDark,font=\fontsize{7.0}{7.6}\bfseries,align=center] at (11.87,5.615)
+  {CUSUM\\$C_b$};
 
-% Step 2: an uncluttered CUSUM timeline.  The first L windows define mu;
-% monitoring starts only after the baseline.
-\draw[rounded corners=2pt,fill=white,draw=Line,line width=.45pt]
-  (6.02,4.37) rectangle (12.80,5.24);
-\fill[BlueSoft] (6.03,4.38) rectangle (8.20,5.23);
-\node[text=BlueDark,font=\fontsize{6.3}{6.8}\bfseries] at (7.10,5.10)
-  {first $L$ windows $\rightarrow \mu$};
-\draw[Ink,line width=.5pt] (6.24,4.57)--(12.58,4.57);
-\draw[Violet,dashed,line width=.55pt] (6.24,4.80)--(12.58,4.80);
-\node[anchor=east,text=VioletDark,font=\fontsize{6.3}{6.8}\selectfont]
-  at (6.18,4.80) {$\tau$};
-\draw[VioletDark,line width=1.25pt]
-  (6.50,4.63)--(7.55,4.63)--(8.60,4.66)--(9.65,4.73)--(10.70,4.89)--(11.75,4.97)--(12.40,4.91);
-\fill[VioletDark] (10.70,4.89) circle (.07);
-\draw[Coral,dashed,line width=.6pt] (10.70,4.45)--(10.70,5.01);
-\node[anchor=south,text=CoralDark,font=\fontsize{6.5}{7.0}\bfseries]
-  at (10.70,4.93) {$b^\star$};
-\foreach \xx/\lab in {6.50/$W_1$,7.55/$W_2$,8.60/$W_3$,9.65/$W_4$,10.70/$W_5$,11.75/$W_6$}{
-  \node[text=Muted,font=\fontsize{6.3}{6.8}\selectfont] at (\xx,4.46) {\lab};
+% 2) Estimate the baseline first, then monitor for a sustained threshold crossing.
+\draw[rounded corners=2pt,fill=white,draw=Line,line width=.55pt]
+  (5.91,4.32) rectangle (12.93,5.20);
+\fill[BlueSoft,rounded corners=1.5pt] (5.92,4.33) rectangle (8.28,5.19);
+\node[text=BlueDark,font=\fontsize{6.8}{7.3}\bfseries] at (7.10,5.06)
+  {baseline $u^{\mathrm{base}}$: first $L$ windows};
+\node[text=Muted,font=\fontsize{6.8}{7.3}\bfseries] at (11.58,5.06)
+  {monitor $C_b$};
+\draw[Ink,line width=.65pt] (6.16,4.53)--(12.70,4.53);
+\draw[Violet,dashed,line width=.75pt] (6.16,4.78)--(12.70,4.78);
+\node[anchor=east,text=VioletDark,font=\fontsize{6.8}{7.3}\bfseries]
+  at (6.10,4.78) {$\tau$};
+\draw[VioletDark,line width=1.5pt,line join=round]
+  (6.43,4.59)--(7.48,4.59)--(8.53,4.62)--(9.58,4.68)--(10.63,4.86)--(11.68,4.94)--(12.43,4.88);
+\fill[VioletDark] (10.63,4.86) circle (.075);
+\draw[Coral,dashed,line width=.75pt] (10.63,4.42)--(10.63,4.99);
+\node[anchor=south,text=CoralDark,font=\fontsize{7.0}{7.5}\bfseries]
+  at (10.63,4.89) {$b^\star$};
+\foreach \xx/\lab in {6.43/$W_1$,7.48/$W_2$,8.53/$W_3$,9.58/$W_4$,10.63/$W_5$,11.68/$W_6$}{
+  \node[text=Muted,font=\fontsize{6.7}{7.2}\selectfont] at (\xx,4.42) {\lab};
 }
 
-% The prefix-weight rule gets its own row.
-\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.45pt]
-  (5.94,3.62) rectangle (8.16,4.25);
-\node[text=VioletDark,font=\fontsize{6.5}{7.1}\bfseries,align=center]
-  at (7.05,3.935) {$b<b^\star$: full trust\\$w_b^{\mathrm{pre}}=1$};
-\draw[flow,color=VioletDark] (8.19,3.935)--(8.50,3.935);
-\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.45pt]
-  (8.54,3.62) rectangle (12.88,4.25);
+% 3) Convert the detected horizon into a monotone prefix weight.
+\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.55pt]
+  (5.91,3.61) rectangle (8.06,4.20);
+\node[text=VioletDark,font=\fontsize{6.8}{7.4}\bfseries,align=center]
+  at (6.985,3.905) {before $b^\star$: full trust\\$w_b^{\mathrm{pre}}=1$};
+\draw[flow,color=VioletDark,line width=.8pt] (8.10,3.905)--(8.35,3.905);
+\draw[rounded corners=2pt,fill=white,draw=Violet,line width=.55pt]
+  (8.39,3.61) rectangle (12.93,4.20);
 \node[text=VioletDark,font=\fontsize{6.3}{6.9}\bfseries,align=center]
-  at (10.71,3.935) {$b\ge b^\star$: monotone decay\\
-    $w_b^{\mathrm{pre}}=\min\!\left(w_{b-1}^{\mathrm{pre}},e^{-\lambda(C_b-\tau)_+}\right)$};
+  at (10.66,3.905) {after $b^\star$: monotone decay\\
+    $w_b^{\mathrm{pre}}=\min\!\left\{w_{b-1}^{\mathrm{pre}},e^{-\lambda(C_b-\tau)_+}\right\}$};
 
 % Teacher support.
 \draw[subpanel,fill=TealSoft] (13.33,3.55) rectangle (17.62,6.53);
@@ -226,7 +227,7 @@
 \node[anchor=west,text=white,font=\fontsize{8.5}{9.2}\bfseries] at (13.97,6.28)
   {3. Teacher support $\rightarrow w^{\mathrm{sup}}$};
 \node[anchor=west,font=\fontsize{6.9}{7.6}\selectfont] at (13.62,5.63)
-  {$p^{\mathrm{sup}}_{t,k}=e^{-[\,-\ell^T_{t,k}-H^T_t\,]_+}$};
+  {$p^{\mathrm{sup}}_t=e^{-[\,-\ell^T_t-H^T_t\,]_+}$};
 \node[anchor=west,text=Muted,font=\fontsize{6.3}{6.9}\selectfont] at (13.62,5.27)
   {teacher plausibility controls the boost};
 \draw[rounded corners=2pt,fill=GreenSoft,draw=Green,line width=.45pt]
