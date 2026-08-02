@@ -39,7 +39,6 @@ export OAL_ENABLED=${OAL_ENABLED:-True}
 export PT_OAL_OUTCOME_VALIDATION_ENABLED=${PT_OAL_OUTCOME_VALIDATION_ENABLED:-True}
 export PT_OAL_PREFIX_TRUST_ENABLED=${PT_OAL_PREFIX_TRUST_ENABLED:-True}
 export PT_OAL_WINDOW_SIZE=${PT_OAL_WINDOW_SIZE:-128}
-export PT_OAL_BASELINE_BLOCKS=${PT_OAL_BASELINE_BLOCKS:-2}
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -116,7 +115,7 @@ export PARALLEL_SIZE=1
 if [ "$ADV_ESTIMATOR" = "token_reward_direct" ]; then
     DEFAULT_RUN_NAME=OPD_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 else
-    DEFAULT_RUN_NAME=pov_soft-out${PT_OAL_OUTCOME_VALIDATION_ENABLED}-pre${PT_OAL_PREFIX_TRUST_ENABLED}-w${PT_OAL_WINDOW_SIZE}-b${PT_OAL_BASELINE_BLOCKS}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=pov_interp-out${PT_OAL_OUTCOME_VALIDATION_ENABLED}-pre${PT_OAL_PREFIX_TRUST_ENABLED}-w${PT_OAL_WINDOW_SIZE}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 fi
 export RUN_NAME=${RUN_NAME:-$DEFAULT_RUN_NAME}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
@@ -163,7 +162,6 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     +algorithm.pt_oal.outcome_validation_enabled=$PT_OAL_OUTCOME_VALIDATION_ENABLED \
     +algorithm.pt_oal.prefix_trust_enabled=$PT_OAL_PREFIX_TRUST_ENABLED \
     +algorithm.pt_oal.prefix_window_size=$PT_OAL_WINDOW_SIZE \
-    +algorithm.pt_oal.prefix_baseline_blocks=$PT_OAL_BASELINE_BLOCKS \
     +algorithm.pt_oal.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
     data.train_files="$TRAIN_DATASET" \

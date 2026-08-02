@@ -883,7 +883,9 @@ def compute_token_reward_direct_advantage(
         advantages = token_level_rewards * reward_mask
         returns = advantages.clone()
 
-        align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(dtype=token_level_rewards.dtype)
+        align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(
+            device=token_level_rewards.device, dtype=token_level_rewards.dtype
+        )
         outcome_scores = _odw_outcome_scores(
             kwargs.get("true_reward_score", None),
             token_level_rewards,
@@ -1221,13 +1223,41 @@ def _odw_get_config(config):
 
 
 def _odw_outcome_scores(true_reward_score, token_level_rewards, response_mask):
+    response_mask = response_mask.to(device=token_level_rewards.device)
     rewards_for_outcome = true_reward_score if true_reward_score is not None else token_level_rewards
-    if rewards_for_outcome.dim() == 3:
-        rewards_for_outcome = rewards_for_outcome.sum(dim=-1)
-    rewards_for_outcome = rewards_for_outcome.to(dtype=token_level_rewards.dtype)
+    rewards_for_outcome = rewards_for_outcome.to(
+        device=token_level_rewards.device, dtype=token_level_rewards.dtype
+    )
+    batch_size, response_length = response_mask.shape
+    if rewards_for_outcome.dim() == 0 or rewards_for_outcome.shape[0] != batch_size:
+        raise ValueError(
+            "Outcome rewards must have one leading entry per response, got "
+            f"shape {tuple(rewards_for_outcome.shape)} for batch size {batch_size}."
+        )
     if rewards_for_outcome.dim() == 1:
         return rewards_for_outcome.clamp(0.0, 1.0)
-    return (rewards_for_outcome * response_mask.to(dtype=rewards_for_outcome.dtype)).sum(dim=-1).clamp(0.0, 1.0)
+    if rewards_for_outcome.dim() == 2 and rewards_for_outcome.shape[1] == 1:
+        return rewards_for_outcome[:, 0].clamp(0.0, 1.0)
+    if rewards_for_outcome.dim() not in (2, 3):
+        raise ValueError(
+            "Outcome rewards must have shape [batch], [batch, 1], [batch, response], or "
+            f"[batch, response, candidates], got {tuple(rewards_for_outcome.shape)}."
+        )
+    if rewards_for_outcome.shape[1] != response_length:
+        raise ValueError(
+            "Token-level outcome rewards must match response_mask length, got "
+            f"{tuple(rewards_for_outcome.shape)} and {tuple(response_mask.shape)}."
+        )
+    if rewards_for_outcome.dim() == 3:
+        expanded_mask = (response_mask > 0).unsqueeze(-1).expand_as(rewards_for_outcome)
+        if not bool(torch.isfinite(rewards_for_outcome[expanded_mask]).all().item()):
+            raise ValueError("Outcome rewards contain non-finite values on valid response positions.")
+        rewards_for_outcome = rewards_for_outcome.sum(dim=-1)
+    valid_tokens = response_mask > 0
+    if not bool(torch.isfinite(rewards_for_outcome[valid_tokens]).all().item()):
+        raise ValueError("Outcome rewards contain non-finite values on valid response positions.")
+    masked_rewards = torch.where(valid_tokens, rewards_for_outcome, torch.zeros_like(rewards_for_outcome))
+    return masked_rewards.sum(dim=-1).clamp(0.0, 1.0)
 
 
 def _oal_get_config(config):
@@ -1244,7 +1274,6 @@ def _oal_get_config(config):
         "outcome_validation_enabled": bool(outcome_validation_enabled),
         "prefix_trust_enabled": bool(_config_get(raw, "prefix_trust_enabled", True)),
         "prefix_window_size": max(1, int(_config_get(raw, "prefix_window_size", 128))),
-        "prefix_baseline_blocks": max(1, int(_config_get(raw, "prefix_baseline_blocks", 2))),
     }
 
 
@@ -1272,6 +1301,39 @@ def _oal_leave_one_out_outcome_advantage(outcome_scores, index):
     return advantages
 
 
+def _oal_group_centered_outcome_advantage(outcome_scores, index):
+    """Return the parameter-free, group-centered outcome residual."""
+    if index is None:
+        raise ValueError("POV outcome validation requires response-group ids in `index`.")
+    if len(index) != outcome_scores.shape[0]:
+        raise ValueError(
+            f"POV received {len(index)} response-group ids for a batch of {outcome_scores.shape[0]} responses."
+        )
+
+    id_to_positions = defaultdict(list)
+    for batch_idx, group_id in enumerate(index):
+        id_to_positions[group_id].append(batch_idx)
+
+    advantages = torch.zeros_like(outcome_scores)
+    for positions in id_to_positions.values():
+        if len(positions) <= 1:
+            continue
+        position_tensor = torch.as_tensor(positions, device=outcome_scores.device, dtype=torch.long)
+        group_scores = outcome_scores.index_select(0, position_tensor)
+        advantages[position_tensor] = group_scores - group_scores.mean()
+    return advantages
+
+
+def _oal_response_median_abs_scale(values, valid_mask):
+    """Return one robust OPD magnitude per response without introducing a scale hyperparameter."""
+    scales = torch.zeros(values.shape[0], device=values.device, dtype=values.dtype)
+    for batch_idx in range(values.shape[0]):
+        valid_values = values[batch_idx][valid_mask[batch_idx].bool()]
+        if valid_values.numel() > 0:
+            scales[batch_idx] = valid_values.abs().median()
+    return scales
+
+
 def _oal_normalized_logit_delta(logit_delta, valid_mask, eps=1e-6):
     """Robustly normalize each response's OPD gap and bound it to (-1, 1)."""
     normalized = torch.zeros_like(logit_delta)
@@ -1291,66 +1353,86 @@ def _pt_oal_prefix_trust_weights(
     response_mask,
     pt_cfg,
 ):
-    """Compute threshold-free monotone prefix trust from relative teacher support."""
+    """Compute recoverable prefix trust from running-best relative teacher support.
+
+    Window size is the only structural choice.  There is no baseline length,
+    CUSUM drift, trigger threshold, or decay coefficient.  A window receives
+    the ratio between its support and the best support observed so far, so a
+    temporary drop does not permanently suppress the remaining response.
+    """
+    if teacher_sampled_log_probs.shape != response_mask.shape:
+        raise ValueError(
+            "POV prefix trust expects teacher_sampled_log_probs to match "
+            f"response_mask, got {tuple(teacher_sampled_log_probs.shape)} and {tuple(response_mask.shape)}."
+        )
+    if teacher_entropy.shape != response_mask.shape:
+        raise ValueError(
+            "POV prefix trust expects teacher_entropy to match "
+            f"response_mask, got {tuple(teacher_entropy.shape)} and {tuple(response_mask.shape)}."
+        )
+
+    teacher_sampled_log_probs = teacher_sampled_log_probs.to(device=teacher_entropy.device)
+    response_mask = response_mask.to(device=teacher_entropy.device)
     mask = response_mask.to(dtype=teacher_entropy.dtype)
-    excess_surprisal = (-teacher_sampled_log_probs - teacher_entropy) * mask
-    token_support = torch.exp(-torch.relu(excess_surprisal)) * mask
+    valid = response_mask > 0
+    if not bool(torch.isfinite(teacher_sampled_log_probs[valid]).all().item()):
+        raise ValueError("POV prefix trust received non-finite teacher_sampled_log_probs on valid tokens.")
+    if not bool(torch.isfinite(teacher_entropy[valid]).all().item()):
+        raise ValueError("POV prefix trust received non-finite teacher_entropy on valid tokens.")
+    raw_excess_surprisal = -teacher_sampled_log_probs - teacher_entropy
+    excess_surprisal = torch.where(valid, raw_excess_surprisal, torch.zeros_like(raw_excess_surprisal))
+    raw_token_support = torch.exp(-torch.relu(excess_surprisal))
+    token_support = torch.where(valid, raw_token_support, torch.zeros_like(raw_token_support))
     prefix_weights = mask.clone()
     window_support = torch.zeros_like(mask)
     window_log_support_drop = torch.zeros_like(mask)
-    cusum_values = torch.zeros_like(mask)
-    baseline_support_values = torch.zeros_like(mask)
+    relative_drop_values = torch.zeros_like(mask)
+    reference_support_values = torch.zeros_like(mask)
     valid_lens = response_mask.sum(dim=-1).long()
-    horizons = valid_lens.clone()
-    triggered = torch.zeros_like(valid_lens, dtype=mask.dtype)
+    worst_positions = valid_lens.clone()
+    half_trust_reached = torch.zeros_like(valid_lens, dtype=mask.dtype)
 
     window_size = pt_cfg["prefix_window_size"]
-    baseline_blocks = pt_cfg["prefix_baseline_blocks"]
     eps = 1e-6
 
     for batch_idx in range(mask.shape[0]):
-        valid_len = int(valid_lens[batch_idx].item())
+        valid_positions = torch.nonzero(response_mask[batch_idx] > 0, as_tuple=False).flatten()
+        valid_len = int(valid_positions.numel())
         if valid_len <= 0:
             continue
 
-        block_ranges = [
-            (start, min(start + window_size, valid_len))
+        # Chunk the actual valid positions instead of assuming that response
+        # masks are always a contiguous right-padded prefix.
+        position_blocks = [
+            valid_positions[start : min(start + window_size, valid_len)]
             for start in range(0, valid_len, window_size)
         ]
         block_support = torch.stack(
-            [token_support[batch_idx, start:end].mean() for start, end in block_ranges]
+            [token_support[batch_idx, positions].mean() for positions in position_blocks]
         )
-        baseline_count = min(baseline_blocks, len(block_ranges))
-        baseline_support = block_support[:baseline_count].mean()
-        baseline_support_values[batch_idx, :valid_len] = baseline_support
+        running_best = block_support[0]
+        minimum_weight = torch.ones((), device=mask.device, dtype=mask.dtype)
+        worst_positions[batch_idx] = valid_positions[-1] + 1
 
-        cusum = torch.zeros((), device=mask.device, dtype=mask.dtype)
-        current_weight = torch.ones((), device=mask.device, dtype=mask.dtype)
-        has_triggered = False
-
-        for block_idx, (start, end) in enumerate(block_ranges):
+        for block_idx, positions in enumerate(position_blocks):
             support = block_support[block_idx]
-            log_support_drop = torch.log((baseline_support + eps) / (support + eps))
-            window_support[batch_idx, start:end] = support
-            window_log_support_drop[batch_idx, start:end] = log_support_drop
+            running_best = torch.maximum(running_best, support)
+            relative_weight = ((support + eps) / (running_best + eps)).clamp(0.0, 1.0)
+            log_support_drop = torch.relu(torch.log((running_best + eps) / (support + eps)))
+            window_support[batch_idx, positions] = support
+            window_log_support_drop[batch_idx, positions] = log_support_drop
+            relative_drop_values[batch_idx, positions] = log_support_drop
+            reference_support_values[batch_idx, positions] = running_best
+            prefix_weights[batch_idx, positions] = relative_weight
 
-            if block_idx >= baseline_count:
-                cusum = torch.clamp(cusum + log_support_drop, min=0.0)
-                raw_weight = torch.exp(-cusum)
-                current_weight = torch.minimum(current_weight, raw_weight)
+            # b* is the most weakly supported window.  Reaching half trust is
+            # retained only as a diagnostic for existing audit tooling.
+            if bool((relative_weight < minimum_weight).item()):
+                minimum_weight = relative_weight
+                worst_positions[batch_idx] = positions[0]
 
-            # The half-trust horizon is diagnostic only; it never gates training.
-            if (
-                not has_triggered
-                and block_idx >= baseline_count
-                and bool((current_weight <= 0.5 + eps).item())
-            ):
-                has_triggered = True
-                horizons[batch_idx] = start
-                triggered[batch_idx] = 1.0
-
-            cusum_values[batch_idx, start:end] = cusum
-            prefix_weights[batch_idx, start:end] = current_weight
+        if bool((minimum_weight <= 0.5 + eps).item()):
+            half_trust_reached[batch_idx] = 1.0
 
     prefix_weights = prefix_weights * mask
     return (
@@ -1359,10 +1441,10 @@ def _pt_oal_prefix_trust_weights(
         token_support,
         window_support,
         window_log_support_drop,
-        cusum_values,
-        baseline_support_values,
-        horizons,
-        triggered,
+        relative_drop_values,
+        reference_support_values,
+        worst_positions,
+        half_trust_reached,
     )
 
 
@@ -1374,42 +1456,115 @@ def compute_outcome_aligned_logit_opd_advantage(
     index: Optional[np.ndarray] = None,
     **kwargs,
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
-    """Parameter-free Prefix-Outcome Validity calibration for dense OPD."""
+    """Prefix-Outcome Validity interpolation for dense OPD.
+
+    Informative outcome groups interpolate between dense OPD and an
+    automatically scale-matched outcome target.  Homogeneous groups retain
+    raw OPD.  A final absolute-mass match prevents the validity weights from
+    acting as an implicit learning-rate reduction.
+    """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
-        if token_level_rewards.dim() == 3:
-            reward_mask = response_mask.unsqueeze(-1).to(dtype=token_level_rewards.dtype)
-        else:
-            reward_mask = response_mask.to(dtype=token_level_rewards.dtype)
+        if response_mask.dim() != 2:
+            raise ValueError(f"POV expects a 2D response_mask, got shape {tuple(response_mask.shape)}.")
+        if token_level_rewards.dim() not in (2, 3):
+            raise ValueError(
+                "POV expects token_level_rewards with shape [batch, response] or "
+                f"[batch, response, candidates], got {tuple(token_level_rewards.shape)}."
+            )
+        if token_level_rewards.shape[:2] != response_mask.shape:
+            raise ValueError(
+                "POV expects the first two reward dimensions to match response_mask, got "
+                f"{tuple(token_level_rewards.shape)} and {tuple(response_mask.shape)}."
+            )
 
-        dense_advantages = token_level_rewards * reward_mask
-        if not oal_cfg["enabled"]:
-            returns = dense_advantages.clone()
-            return dense_advantages, returns, {}
-
+        response_mask = response_mask.to(device=token_level_rewards.device)
         mask = response_mask.to(dtype=token_level_rewards.dtype)
-        outcome_scores = _odw_outcome_scores(kwargs.get("true_reward_score", None), token_level_rewards, response_mask)
-        correct = outcome_scores > 0.5
-        align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(dtype=token_level_rewards.dtype)
-
         if token_level_rewards.dim() == 3:
-            valid_mask = response_mask.unsqueeze(-1).expand_as(align_scores).to(dtype=token_level_rewards.dtype)
+            response_candidate_mask = mask.unsqueeze(-1).expand_as(token_level_rewards)
+            if oal_cfg["enabled"]:
+                candidate_valid_mask = kwargs.get("candidate_valid_mask", None)
+                if candidate_valid_mask is None:
+                    raise ValueError(
+                        "POV top-k mode requires candidate_valid_mask so interpolation cannot activate "
+                        "masked intersection/union candidates."
+                    )
+                if candidate_valid_mask.shape != token_level_rewards.shape:
+                    raise ValueError(
+                        "POV expects candidate_valid_mask to match token_level_rewards, got "
+                        f"{tuple(candidate_valid_mask.shape)} and {tuple(token_level_rewards.shape)}."
+                    )
+                valid_mask = (
+                    candidate_valid_mask.to(device=token_level_rewards.device, dtype=token_level_rewards.dtype)
+                    * response_candidate_mask
+                )
+            else:
+                valid_mask = response_candidate_mask
             outcome_view_shape = (-1, 1, 1)
         else:
             valid_mask = mask
             outcome_view_shape = (-1, 1)
+        reward_mask = valid_mask
+
+        dense_advantages = torch.where(
+            valid_mask.bool(), token_level_rewards, torch.zeros_like(token_level_rewards)
+        )
+        if not oal_cfg["enabled"]:
+            returns = dense_advantages.clone()
+            return dense_advantages, returns, {}
+
+        true_reward_score = kwargs.get("true_reward_score", None)
+        if oal_cfg["outcome_validation_enabled"] and true_reward_score is None:
+            raise ValueError(
+                "POV outcome validation requires true_reward_score; dense OPD rewards cannot be used "
+                "as a correctness label."
+            )
+        if true_reward_score is None:
+            outcome_scores = torch.zeros(
+                token_level_rewards.shape[0], device=token_level_rewards.device, dtype=token_level_rewards.dtype
+            )
+        else:
+            outcome_scores = _odw_outcome_scores(true_reward_score, token_level_rewards, response_mask)
+        if outcome_scores.shape != (token_level_rewards.shape[0],):
+            raise ValueError(
+                "POV expects one scalar correctness outcome per response after masking, got "
+                f"shape {tuple(outcome_scores.shape)} for batch size {token_level_rewards.shape[0]}."
+            )
+        if not bool(torch.isfinite(outcome_scores).all().item()):
+            raise ValueError("POV received non-finite true_reward_score values.")
+        correct = outcome_scores > 0.5
+        align_scores = kwargs.get("logit_delta_scores", token_level_rewards).to(
+            device=token_level_rewards.device, dtype=token_level_rewards.dtype
+        )
+        if align_scores.shape != token_level_rewards.shape:
+            raise ValueError(
+                "POV expects logit_delta_scores to match token_level_rewards, got "
+                f"{tuple(align_scores.shape)} and {tuple(token_level_rewards.shape)}."
+            )
+        if not bool(torch.isfinite(dense_advantages[valid_mask.bool()]).all().item()):
+            raise ValueError("POV received non-finite dense OPD rewards on valid positions.")
+        if not bool(torch.isfinite(align_scores[valid_mask.bool()]).all().item()):
+            raise ValueError("POV received non-finite logit_delta_scores on valid positions.")
 
         normalized_delta = _oal_normalized_logit_delta(align_scores, valid_mask)
         if oal_cfg["outcome_validation_enabled"]:
-            group_outcome_advantage = _oal_leave_one_out_outcome_advantage(outcome_scores, index)
+            group_outcome_advantage = _oal_group_centered_outcome_advantage(outcome_scores, index)
             outcome_alignment = group_outcome_advantage.view(*outcome_view_shape) * normalized_delta
-            conflict_score = torch.relu(-outcome_alignment).clamp(max=1.0) * valid_mask
-            outcome_weights = (1.0 - conflict_score) * valid_mask
+            conflict_score = torch.relu(-outcome_alignment) * valid_mask
+            outcome_weights = valid_mask / (1.0 + conflict_score)
         else:
             group_outcome_advantage = torch.zeros_like(outcome_scores)
             outcome_alignment = torch.zeros_like(align_scores)
             conflict_score = torch.zeros_like(align_scores)
             outcome_weights = valid_mask
+
+        outcome_target_scale = _oal_response_median_abs_scale(dense_advantages, valid_mask)
+        outcome_target = (
+            group_outcome_advantage.view(*outcome_view_shape)
+            * outcome_target_scale.view(*outcome_view_shape)
+            * valid_mask
+        )
+        informative_outcome = group_outcome_advantage != 0
 
         positive_outcome = group_outcome_advantage.view(*outcome_view_shape) > 0
         negative_outcome = group_outcome_advantage.view(*outcome_view_shape) < 0
@@ -1433,13 +1588,13 @@ def compute_outcome_aligned_logit_opd_advantage(
                 candidate_support,
                 window_support,
                 window_log_support_drop,
-                prefix_cusum,
-                prefix_baseline_support,
+                prefix_relative_drop,
+                prefix_reference_support,
                 prefix_horizons,
                 prefix_triggered,
             ) = _pt_oal_prefix_trust_weights(
-                teacher_sampled_log_probs.to(dtype=mask.dtype),
-                teacher_entropy.to(dtype=mask.dtype),
+                teacher_sampled_log_probs.to(device=mask.device, dtype=mask.dtype),
+                teacher_entropy.to(device=mask.device, dtype=mask.dtype),
                 response_mask,
                 oal_cfg,
             )
@@ -1447,32 +1602,86 @@ def compute_outcome_aligned_logit_opd_advantage(
             prefix_weights = mask
             excess_surprisal = torch.zeros_like(mask)
             if teacher_sampled_log_probs is not None and teacher_entropy is not None:
-                candidate_support = (
-                    torch.exp(
-                        -torch.relu(
-                            -teacher_sampled_log_probs.to(dtype=mask.dtype)
-                            - teacher_entropy.to(dtype=mask.dtype)
-                        )
-                    )
-                    * mask
+                teacher_logp_for_support = teacher_sampled_log_probs.to(device=mask.device, dtype=mask.dtype)
+                teacher_entropy_for_support = teacher_entropy.to(device=mask.device, dtype=mask.dtype)
+                valid_tokens = response_mask > 0
+                if not bool(torch.isfinite(teacher_logp_for_support[valid_tokens]).all().item()):
+                    raise ValueError("POV received non-finite teacher_sampled_log_probs on valid tokens.")
+                if not bool(torch.isfinite(teacher_entropy_for_support[valid_tokens]).all().item()):
+                    raise ValueError("POV received non-finite teacher_entropy on valid tokens.")
+                raw_candidate_support = torch.exp(
+                    -torch.relu(-teacher_logp_for_support - teacher_entropy_for_support)
+                )
+                candidate_support = torch.where(
+                    valid_tokens, raw_candidate_support, torch.zeros_like(raw_candidate_support)
                 )
             else:
                 candidate_support = mask
             window_support = candidate_support
             window_log_support_drop = torch.zeros_like(mask)
-            prefix_cusum = torch.zeros_like(mask)
-            prefix_baseline_support = candidate_support
+            prefix_relative_drop = torch.zeros_like(mask)
+            prefix_reference_support = candidate_support
             prefix_horizons = response_mask.sum(dim=-1).long()
             prefix_triggered = torch.zeros_like(prefix_horizons, dtype=mask.dtype)
 
         if outcome_weights.dim() == 3:
-            keep_mask = outcome_weights * prefix_weights.unsqueeze(-1)
+            opd_interpolation_weight = outcome_weights * prefix_weights.unsqueeze(-1)
+            informative_view = informative_outcome.view(-1, 1, 1)
+        else:
+            opd_interpolation_weight = outcome_weights * prefix_weights
+            informative_view = informative_outcome.view(-1, 1)
+
+        if oal_cfg["outcome_validation_enabled"]:
+            interpolated_advantages = (
+                opd_interpolation_weight * dense_advantages
+                + (1.0 - opd_interpolation_weight) * outcome_target
+            )
+            preliminary_advantages = torch.where(informative_view, interpolated_advantages, dense_advantages)
+        else:
+            # Prefix-only ablation: redistribute raw OPD across positions even
+            # though no outcome target is available.
+            preliminary_advantages = dense_advantages * opd_interpolation_weight
+
+        # Accumulate the normalization scalars in fp64.  The reward tensors
+        # may be bf16/fp16, where a long response can otherwise overflow even
+        # though every individual reward is finite.
+        raw_abs_mass = dense_advantages.abs().sum(dtype=torch.float64)
+        preliminary_abs_mass = preliminary_advantages.abs().sum(dtype=torch.float64)
+        mass_eps = torch.finfo(torch.float64).tiny
+        if bool((raw_abs_mass <= mass_eps).item()):
+            mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
+            advantages = dense_advantages.clone()
+        elif bool((preliminary_abs_mass <= mass_eps).item()):
+            # Exact cancellation should not erase a non-zero OPD batch.
+            mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
+            advantages = dense_advantages.clone()
+        else:
+            scale_fp64 = raw_abs_mass / preliminary_abs_mass
+            mass_renorm_scale = scale_fp64.to(dtype=token_level_rewards.dtype)
+            advantages = preliminary_advantages * mass_renorm_scale
+            if not bool(torch.isfinite(advantages[valid_mask.bool()]).all().item()):
+                # An extreme near-cancellation can overflow when the scalar is
+                # cast back to a low-precision reward dtype.  Preserve raw OPD
+                # instead of injecting Inf/NaN into the policy loss.
+                mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
+                advantages = dense_advantages.clone()
+
+        raw_response_mass = dense_advantages.abs().flatten(start_dim=1).sum(dim=-1, dtype=torch.float64)
+        preliminary_response_mass = preliminary_advantages.abs().flatten(start_dim=1).sum(
+            dim=-1, dtype=torch.float64
+        )
+        pre_renorm_mass_ratio = torch.where(
+            raw_response_mass > 0,
+            preliminary_response_mass / raw_response_mass.clamp_min(torch.finfo(raw_response_mass.dtype).tiny),
+            torch.ones_like(raw_response_mass),
+        )
+        mass_renorm_scales = torch.ones_like(outcome_scores) * mass_renorm_scale
+        keep_mask = opd_interpolation_weight
+        if keep_mask.dim() == 3:
             token_keep_mask = (keep_mask.sum(dim=-1) > 0).to(dtype=mask.dtype) * mask
         else:
-            keep_mask = outcome_weights * prefix_weights
             token_keep_mask = (keep_mask > 0).to(dtype=mask.dtype) * mask
 
-        advantages = dense_advantages * keep_mask
         returns = advantages.clone()
 
     extra_metrics = {
@@ -1485,6 +1694,10 @@ def compute_outcome_aligned_logit_opd_advantage(
         "oal_outcome_alignment": outcome_alignment.detach(),
         "oal_conflict_score": conflict_score.detach(),
         "oal_outcome_weights": outcome_weights.detach(),
+        "oal_outcome_target_scale": outcome_target_scale.detach(),
+        "oal_informative_outcome_mask": informative_outcome.to(dtype=mask.dtype).detach(),
+        "oal_pre_renorm_mass_ratio": pre_renorm_mass_ratio.detach(),
+        "oal_mass_renorm_scale": mass_renorm_scales.detach(),
         "oal_pos_align_mask": pos_align_mask.detach(),
         "oal_pos_anti_mask": pos_anti_mask.detach(),
         "oal_neg_align_mask": neg_align_mask.detach(),
@@ -1497,8 +1710,11 @@ def compute_outcome_aligned_logit_opd_advantage(
         "pt_oal_window_log_support_drop": window_log_support_drop.detach(),
         # Legacy alias retained so older dashboards do not fail.
         "pt_oal_window_excess": window_log_support_drop.detach(),
-        "pt_oal_cusum": prefix_cusum.detach(),
-        "pt_oal_baseline_support": prefix_baseline_support.detach(),
+        "pt_oal_relative_log_support_drop": prefix_relative_drop.detach(),
+        # Legacy aliases retained so older dashboards and audit scripts load.
+        "pt_oal_cusum": prefix_relative_drop.detach(),
+        "pt_oal_reference_support": prefix_reference_support.detach(),
+        "pt_oal_baseline_support": prefix_reference_support.detach(),
         "pt_oal_horizon": prefix_horizons.to(dtype=mask.dtype).detach(),
         "pt_oal_triggered": prefix_triggered.detach(),
     }

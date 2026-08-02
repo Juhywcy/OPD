@@ -63,7 +63,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-norm-threshold", type=float, default=1e-10)
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
     parser.add_argument("--prefix-window-size", type=int, default=128)
-    parser.add_argument("--prefix-baseline-blocks", type=int, default=2)
     parser.add_argument("--save-responses", action="store_true")
     return parser
 
@@ -279,7 +278,6 @@ def _pov_advantages(args, raw_opd, response_mask, outcomes, teacher_log_probs, t
             "outcome_validation_enabled": True,
             "prefix_trust_enabled": True,
             "prefix_window_size": args.prefix_window_size,
-            "prefix_baseline_blocks": args.prefix_baseline_blocks,
         }
     }
     advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
@@ -395,7 +393,7 @@ def _run_batch(args, model, teacher, tokenizer, dataset, batch_index: int, devic
     horizons = pov_extras["pt_oal_horizon"].long().tolist()
     triggered = pov_extras["pt_oal_triggered"].bool().tolist()
     prefix_weights = pov_extras["pt_oal_prefix_weights"]
-    prefix_cusum = pov_extras["pt_oal_cusum"]
+    relative_log_support_drop = pov_extras["pt_oal_relative_log_support_drop"]
     window_support = pov_extras["pt_oal_window_support"]
     for trajectory_index, (prompt_id, outcome, valid_length, horizon, did_trigger) in enumerate(
         zip(repeated_prompt_ids, outcomes_a.tolist(), valid_lengths, horizons, triggered, strict=True)
@@ -421,7 +419,9 @@ def _run_batch(args, model, teacher, tokenizer, dataset, batch_index: int, devic
                     "near_zero": stats["near_zero"],
                     "conflict": stats["dot"] < 0.0,
                     "prefix_weight": float(prefix_weights[trajectory_index, start].cpu()),
-                    "prefix_cusum": float(prefix_cusum[trajectory_index, start].cpu()),
+                    "relative_log_support_drop": float(
+                        relative_log_support_drop[trajectory_index, start].cpu()
+                    ),
                     "teacher_support": float(window_support[trajectory_index, start].cpu()),
                 }
             )

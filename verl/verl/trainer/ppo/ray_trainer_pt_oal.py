@@ -265,6 +265,8 @@ def compute_advantage(
             adv_kwargs["student_entropy"] = data.batch["student_entropy"]
         if "logit_delta_scores" in data.batch:  # optional raw teacher_logp - student_logp
             adv_kwargs["logit_delta_scores"] = data.batch["logit_delta_scores"]
+        if "candidate_valid_mask" in data.batch:  # exact support for top-k OPD rewards
+            adv_kwargs["candidate_valid_mask"] = data.batch["candidate_valid_mask"]
 
         # calculate advantage estimator
         res = adv_estimator_fn(**adv_kwargs)
@@ -1361,7 +1363,10 @@ class RayPPOTrainer:
                         if "true_reward_score" in reward_extra_infos_dict:
                             true_reward_val = reward_extra_infos_dict["true_reward_score"]
                             if isinstance(true_reward_val, torch.Tensor):
-                                batch.batch["true_reward_score"] = true_reward_val
+                                batch.batch["true_reward_score"] = true_reward_val.to(
+                                    device=reward_tensor.device,
+                                    dtype=reward_tensor.dtype,
+                                )
                             else:
                                 batch.batch["true_reward_score"] = torch.as_tensor(
                                     true_reward_val,
@@ -1369,6 +1374,24 @@ class RayPPOTrainer:
                                     dtype=reward_tensor.dtype,
                                 )
                         else:
+                            pt_oal_cfg = self.config.algorithm.get("pt_oal", {}) or {}
+                            outcome_validation_enabled = pt_oal_cfg.get("outcome_validation_enabled", None)
+                            if outcome_validation_enabled is None:
+                                outcome_validation_enabled = str(pt_oal_cfg.get("split_mode", "oal")) != "all"
+                            needs_true_outcome = (
+                                self.config.algorithm.adv_estimator == "prefix_trust_oal_opd"
+                                and pt_oal_cfg.get("enabled", True)
+                                and outcome_validation_enabled
+                            )
+                            if needs_true_outcome:
+                                raise RuntimeError(
+                                    "POV outcome validation requires the reward manager to return "
+                                    "reward_extra_info['true_reward_score']. The dense OPD rm_scores "
+                                    "cannot be reused as a correctness label. Use the naive reward manager "
+                                    "or disable algorithm.pt_oal.outcome_validation_enabled."
+                                )
+                            # Preserve the legacy fallback for other estimators and
+                            # for the explicit Prefix-only ablation.
                             batch.batch["true_reward_score"] = reward_tensor
 
                         if reward_extra_infos_dict:
@@ -1520,7 +1543,12 @@ class RayPPOTrainer:
                             keep_mask = batch.batch["oal_keep_mask"].float()
                             token_keep_mask = batch.batch["oal_token_keep_mask"].float()
                             if keep_mask.dim() == 3:
-                                candidate_mask = response_mask.unsqueeze(-1).expand_as(keep_mask).float()
+                                candidate_mask = batch.batch.get("candidate_valid_mask", None)
+                                if candidate_mask is None:
+                                    candidate_mask = response_mask.unsqueeze(-1).expand_as(keep_mask)
+                                else:
+                                    candidate_mask = candidate_mask * response_mask.unsqueeze(-1)
+                                candidate_mask = candidate_mask.float()
                             else:
                                 candidate_mask = response_mask.float()
                             valid_candidates = candidate_mask.sum().clamp_min(1)
@@ -1528,6 +1556,7 @@ class RayPPOTrainer:
                             negative_candidates = ((token_level_rewards < 0).float() * candidate_mask).sum()
                             final_weight_mean = keep_mask.sum() / valid_candidates
                             metrics["oal/final_weight_mean"] = final_weight_mean.item()
+                            metrics["oal/opd_interpolation_weight_mean"] = final_weight_mean.item()
                             # Legacy alias for existing dashboards.
                             metrics["oal/kept_candidate_ratio"] = final_weight_mean.item()
                             metrics["oal/positive_candidate_ratio"] = (positive_candidates / valid_candidates).item()
@@ -1543,14 +1572,31 @@ class RayPPOTrainer:
                                 group_advantage = batch.batch["oal_group_outcome_advantage"].float()
                                 metrics["oal/group_outcome_advantage_mean"] = group_advantage.mean().item()
                                 metrics["oal/group_outcome_advantage_abs_mean"] = group_advantage.abs().mean().item()
-                                metrics["oal/informative_outcome_response_ratio"] = (
-                                    group_advantage.abs() > 0
-                                ).float().mean().item()
+                                informative_mask = batch.batch.get(
+                                    "oal_informative_outcome_mask", group_advantage.abs() > 0
+                                ).float()
+                                metrics["oal/informative_outcome_response_ratio"] = informative_mask.mean().item()
+                            if "oal_outcome_target_scale" in batch.batch.keys():
+                                metrics["oal/outcome_target_scale_mean"] = (
+                                    batch.batch["oal_outcome_target_scale"].float().mean().item()
+                                )
+                            if "oal_pre_renorm_mass_ratio" in batch.batch.keys():
+                                metrics["oal/pre_renorm_mass_ratio_mean"] = (
+                                    batch.batch["oal_pre_renorm_mass_ratio"].float().mean().item()
+                                )
+                            if "oal_mass_renorm_scale" in batch.batch.keys():
+                                metrics["oal/mass_renorm_scale"] = (
+                                    batch.batch["oal_mass_renorm_scale"].float().mean().item()
+                                )
                             if "oal_outcome_weights" in batch.batch.keys():
                                 outcome_weights = batch.batch["oal_outcome_weights"].float()
                                 valid_outcome_weights = outcome_weights[candidate_mask > 0]
-                                metrics["oal/outcome_weight_mean"] = valid_outcome_weights.mean().item()
-                                metrics["oal/outcome_weight_min"] = valid_outcome_weights.min().item()
+                                if valid_outcome_weights.numel() > 0:
+                                    metrics["oal/outcome_weight_mean"] = valid_outcome_weights.mean().item()
+                                    metrics["oal/outcome_weight_min"] = valid_outcome_weights.min().item()
+                                else:
+                                    metrics["oal/outcome_weight_mean"] = 0.0
+                                    metrics["oal/outcome_weight_min"] = 0.0
                             if "oal_conflict_score" in batch.batch.keys():
                                 conflict_score = batch.batch["oal_conflict_score"].float()
                                 metrics["oal/conflict_score_mean"] = (
@@ -1565,6 +1611,11 @@ class RayPPOTrainer:
                                 prefix_weights = batch.batch["pt_oal_prefix_weights"].float()
                                 prefix_horizon = batch.batch["pt_oal_horizon"].float()
                                 prefix_triggered = batch.batch["pt_oal_triggered"].float()
+                                metrics["pt_oal/worst_window_position_mean"] = prefix_horizon.mean().item()
+                                metrics["pt_oal/worst_window_position_ratio_mean"] = (
+                                    prefix_horizon / response_lens
+                                ).clamp(0.0, 1.0).mean().item()
+                                # Legacy aliases kept for existing dashboards.
                                 metrics["pt_oal/horizon_mean"] = prefix_horizon.mean().item()
                                 metrics["pt_oal/horizon_ratio_mean"] = (
                                     prefix_horizon / response_lens
@@ -1577,7 +1628,9 @@ class RayPPOTrainer:
                                     (prefix_weights * response_mask).sum() / valid_tokens
                                 ).item()
                                 valid_prefix_weights = prefix_weights[response_mask > 0]
-                                metrics["pt_oal/prefix_weight_min"] = valid_prefix_weights.min().item()
+                                metrics["pt_oal/prefix_weight_min"] = (
+                                    valid_prefix_weights.min().item() if valid_prefix_weights.numel() > 0 else 0.0
+                                )
                                 metrics["pt_oal/excess_surprisal_mean"] = (
                                     (batch.batch["pt_oal_excess_surprisal"].float() * response_mask).sum()
                                     / valid_tokens
@@ -1597,7 +1650,19 @@ class RayPPOTrainer:
                                     / valid_tokens
                                 ).item()
                                 valid_cusum = batch.batch["pt_oal_cusum"].float()[response_mask > 0]
-                                metrics["pt_oal/cusum_max"] = valid_cusum.max().item()
+                                metrics["pt_oal/cusum_max"] = (
+                                    valid_cusum.max().item() if valid_cusum.numel() > 0 else 0.0
+                                )
+                                if "pt_oal_relative_log_support_drop" in batch.batch.keys():
+                                    relative_drop = batch.batch["pt_oal_relative_log_support_drop"].float()
+                                    metrics["pt_oal/relative_log_support_drop_mean"] = (
+                                        (relative_drop * response_mask).sum() / valid_tokens
+                                    ).item()
+                                    metrics["pt_oal/relative_log_support_drop_max"] = (
+                                        relative_drop[response_mask > 0].max().item()
+                                        if bool((response_mask > 0).any().item())
+                                        else 0.0
+                                    )
                                 positions_pt = torch.arange(
                                     response_mask.shape[-1], device=response_mask.device
                                 ).unsqueeze(0)
@@ -1628,6 +1693,14 @@ class RayPPOTrainer:
                                     ).sum()
                                     / valid_tokens
                                 ).item()
+                                if "pt_oal_reference_support" in batch.batch.keys():
+                                    metrics["pt_oal/reference_support_mean"] = (
+                                        (
+                                            batch.batch["pt_oal_reference_support"].float()
+                                            * response_mask
+                                        ).sum()
+                                        / valid_tokens
+                                    ).item()
                                 valid_final_weights = keep_mask[candidate_mask > 0]
                                 if valid_final_weights.numel() > 0:
                                     metrics["pt_oal/max_final_weight"] = valid_final_weights.max().item()
@@ -2905,6 +2978,10 @@ class RayPPOTrainer:
                         "oal_outcome_alignment",
                         "oal_conflict_score",
                         "oal_outcome_weights",
+                        "oal_outcome_target_scale",
+                        "oal_informative_outcome_mask",
+                        "oal_pre_renorm_mass_ratio",
+                        "oal_mass_renorm_scale",
                         "oal_pos_align_mask",
                         "oal_pos_anti_mask",
                         "oal_neg_align_mask",
@@ -2919,12 +2996,15 @@ class RayPPOTrainer:
                         "pt_oal_window_log_support_drop",
                         "pt_oal_window_excess",
                         "pt_oal_cusum",
+                        "pt_oal_relative_log_support_drop",
                         "pt_oal_baseline_support",
+                        "pt_oal_reference_support",
                         "pt_oal_horizon",
                         "pt_oal_triggered",
                         "pt_oal_candidate_support",
                         "teacher_sampled_log_probs",
                         "teacher_candidate_log_probs",
+                        "candidate_valid_mask",
                         "logit_delta_scores",
                         "teacher_in_student_mask",
                         "student_log_probs_on_teacher_ids",

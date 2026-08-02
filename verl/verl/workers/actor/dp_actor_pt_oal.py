@@ -671,6 +671,10 @@ class DataParallelPPOActor(BasePPOActor):
             
         res_tensors["rm_scores"] = rm_scores
         res_tensors["logit_delta_scores"] = logit_delta_scores
+        # Preserve the exact top-k support used to build rm_scores.  POV uses
+        # this mask during interpolation so an additive outcome target cannot
+        # reactivate duplicate or non-overlapping candidates that OPD removed.
+        res_tensors["candidate_valid_mask"] = valid_mask
         if teacher_candidate_log_probs is not None:
             res_tensors["teacher_candidate_log_probs"] = teacher_candidate_log_probs
         return DataProto.from_dict(tensors=res_tensors)

@@ -43,7 +43,6 @@ REFERENCE_NORM_THRESHOLD="${REFERENCE_NORM_THRESHOLD:-1e-10}"
 CANDIDATE_NORM_THRESHOLD="${CANDIDATE_NORM_THRESHOLD:-1e-10}"
 
 PT_OAL_WINDOW_SIZE="${PT_OAL_WINDOW_SIZE:-128}"
-PT_OAL_BASELINE_BLOCKS="${PT_OAL_BASELINE_BLOCKS:-2}"
 
 LENGTH_CALIPER="${LENGTH_CALIPER:-0.20}"
 BOOTSTRAP_SAMPLES="${BOOTSTRAP_SAMPLES:-2000}"
@@ -78,7 +77,6 @@ torchrun --standalone --nproc_per_node="${NPROC_PER_NODE}" -m recipe.repro.pov_g
   --candidate-norm-threshold "${CANDIDATE_NORM_THRESHOLD}" \
   --bootstrap-samples "${BOOTSTRAP_SAMPLES}" \
   --prefix-window-size "${PT_OAL_WINDOW_SIZE}" \
-  --prefix-baseline-blocks "${PT_OAL_BASELINE_BLOCKS}" \
   --seed "${SEED}"
 
 python -m recipe.repro.prefix_horizon_audit \
