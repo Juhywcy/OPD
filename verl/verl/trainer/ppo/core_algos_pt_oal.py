@@ -1462,8 +1462,9 @@ def compute_outcome_aligned_logit_opd_advantage(
     automatically scale-matched outcome target.  Prefix validity strengthens
     that correction only where outcome and OPD conflict; aligned or neutral
     positions retain raw OPD.  Homogeneous groups also retain raw OPD.  A
-    final absolute-mass match prevents the validity weights from acting as an
-    implicit learning-rate reduction.
+    Removed conflict mass is not redistributed across the batch: aligned and
+    neutral positions therefore remain exactly equal to raw OPD, while only
+    outcome-conflicting positions are corrected.
     """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
@@ -1662,29 +1663,41 @@ def compute_outcome_aligned_logit_opd_advantage(
             # though no outcome target is available.
             preliminary_advantages = dense_advantages * opd_interpolation_weight
 
-        # Accumulate the normalization scalars in fp64.  The reward tensors
-        # may be bf16/fp16, where a long response can otherwise overflow even
-        # though every individual reward is finite.
-        raw_abs_mass = dense_advantages.abs().sum(dtype=torch.float64)
-        preliminary_abs_mass = preliminary_advantages.abs().sum(dtype=torch.float64)
-        mass_eps = torch.finfo(torch.float64).tiny
-        if bool((raw_abs_mass <= mass_eps).item()):
+        if oal_cfg["outcome_validation_enabled"]:
+            # Do not redistribute removed conflict mass onto aligned or
+            # neutral tokens.  A batch-wide scalar would couple unrelated
+            # prompts and turn the conflict ratio into a stochastic learning-
+            # rate multiplier.  The full method therefore keeps the
+            # unnormalized interpolation directly; this also makes the
+            # conflict gate's promise exact at the final advantage level.
             mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
-            advantages = dense_advantages.clone()
-        elif bool((preliminary_abs_mass <= mass_eps).item()):
-            # Exact cancellation should not erase a non-zero OPD batch.
-            mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
-            advantages = dense_advantages.clone()
+            advantages = preliminary_advantages
         else:
-            scale_fp64 = raw_abs_mass / preliminary_abs_mass
-            mass_renorm_scale = scale_fp64.to(dtype=token_level_rewards.dtype)
-            advantages = preliminary_advantages * mass_renorm_scale
-            if not bool(torch.isfinite(advantages[valid_mask.bool()]).all().item()):
-                # An extreme near-cancellation can overflow when the scalar is
-                # cast back to a low-precision reward dtype.  Preserve raw OPD
-                # instead of injecting Inf/NaN into the policy loss.
+            # The prefix-only ablation has no outcome-conflict gate, so retain
+            # its historical absolute-mass normalization to isolate positional
+            # redistribution from a global learning-rate change.  Accumulate
+            # scalars in fp64 because long fp16/bf16 responses can otherwise
+            # overflow even when every individual reward is finite.
+            raw_abs_mass = dense_advantages.abs().sum(dtype=torch.float64)
+            preliminary_abs_mass = preliminary_advantages.abs().sum(dtype=torch.float64)
+            mass_eps = torch.finfo(torch.float64).tiny
+            if bool((raw_abs_mass <= mass_eps).item()):
                 mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
                 advantages = dense_advantages.clone()
+            elif bool((preliminary_abs_mass <= mass_eps).item()):
+                # Exact cancellation should not erase a non-zero OPD batch.
+                mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
+                advantages = dense_advantages.clone()
+            else:
+                scale_fp64 = raw_abs_mass / preliminary_abs_mass
+                mass_renorm_scale = scale_fp64.to(dtype=token_level_rewards.dtype)
+                advantages = preliminary_advantages * mass_renorm_scale
+                if not bool(torch.isfinite(advantages[valid_mask.bool()]).all().item()):
+                    # An extreme near-cancellation can overflow when the scalar
+                    # is cast back to a low-precision reward dtype.  Preserve
+                    # raw OPD instead of injecting Inf/NaN into the policy loss.
+                    mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
+                    advantages = dense_advantages.clone()
 
         raw_response_mass = dense_advantages.abs().flatten(start_dim=1).sum(dim=-1, dtype=torch.float64)
         preliminary_response_mass = preliminary_advantages.abs().flatten(start_dim=1).sum(

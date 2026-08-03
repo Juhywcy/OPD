@@ -126,7 +126,7 @@ def test_prefix_trust_chunks_actual_valid_positions_when_mask_has_holes():
     assert torch.isfinite(prefix_weights).all()
 
 
-def test_full_pov_interpolates_conflicts_and_preserves_batch_absolute_mass():
+def test_full_pov_interpolates_conflicts_without_rescaling_reliable_tokens():
     raw_opd = torch.tensor(
         [
             [1.0, -1.0, 0.5, -0.5],
@@ -159,10 +159,49 @@ def test_full_pov_interpolates_conflicts_and_preserves_batch_absolute_mass():
     target = extras["oal_group_outcome_advantage"].view(-1, 1) * target_scale
     q = extras["oal_keep_mask"]
     preliminary = q * raw_opd + (1.0 - q) * target
-    expected = preliminary * (raw_opd.abs().sum() / preliminary.abs().sum())
-    torch.testing.assert_close(advantages, expected)
-    torch.testing.assert_close(advantages.abs().sum(), raw_opd.abs().sum())
+    torch.testing.assert_close(advantages, preliminary)
+    conflict = extras["oal_conflict_score"] > 0
+    torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
+    torch.testing.assert_close(extras["oal_mass_renorm_scale"], torch.ones(2))
+    assert advantages.abs().sum().item() < raw_opd.abs().sum().item()
     assert not torch.allclose(advantages, raw_opd * q)
+
+
+def test_full_pov_does_not_couple_unrelated_prompt_groups():
+    raw_prompt = torch.tensor(
+        [
+            [1.0, -1.0, 0.5, -0.5],
+            [1.0, -1.0, 0.5, -0.5],
+        ]
+    )
+    mask_prompt = torch.ones_like(raw_prompt)
+
+    prompt_advantages, _, _ = compute_outcome_aligned_logit_opd_advantage(
+        token_level_rewards=raw_prompt,
+        response_mask=mask_prompt,
+        config=_pov_config(prefix=False),
+        index=np.array(["prompt-a", "prompt-a"], dtype=object),
+        true_reward_score=torch.tensor([1.0, 0.0]),
+        logit_delta_scores=raw_prompt,
+    )
+
+    unrelated_prompt = torch.tensor(
+        [
+            [8.0, -0.1, 4.0, -0.1],
+            [8.0, -0.1, 4.0, -0.1],
+        ]
+    )
+    combined_raw = torch.cat((raw_prompt, unrelated_prompt), dim=0)
+    combined_advantages, _, _ = compute_outcome_aligned_logit_opd_advantage(
+        token_level_rewards=combined_raw,
+        response_mask=torch.ones_like(combined_raw),
+        config=_pov_config(prefix=False),
+        index=np.array(["prompt-a", "prompt-a", "prompt-b", "prompt-b"], dtype=object),
+        true_reward_score=torch.tensor([1.0, 0.0, 1.0, 0.0]),
+        logit_delta_scores=combined_raw,
+    )
+
+    torch.testing.assert_close(combined_advantages[:2], prompt_advantages)
 
 
 def test_full_pov_applies_prefix_only_to_outcome_conflicts():
@@ -179,7 +218,7 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     ).expand_as(raw_opd)
     teacher_entropy = torch.zeros_like(raw_opd)
 
-    _, _, extras = compute_outcome_aligned_logit_opd_advantage(
+    advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
         token_level_rewards=raw_opd,
         response_mask=mask,
         config=_pov_config(),
@@ -200,6 +239,7 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     # must not alter raw OPD where outcome and OPD already agree.
     torch.testing.assert_close(keep[~conflict], torch.ones_like(keep[~conflict]))
     torch.testing.assert_close(keep[conflict], (outcome * prefix)[conflict])
+    torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
     assert keep[0, 2].item() == 1.0  # correct rollout, positive OPD: aligned
     assert keep[1, 3].item() == 1.0  # wrong rollout, negative OPD: aligned
     assert keep[0, 3].item() < 0.5   # correct rollout, negative OPD: conflict
@@ -351,7 +391,9 @@ def test_topk_pov_keeps_invalid_candidates_zero():
 
     assert torch.all(advantages[~candidate_mask] == 0)
     dense_valid = raw_opd * candidate_mask
-    torch.testing.assert_close(advantages.abs().sum(), dense_valid.abs().sum())
+    conflict = extras["oal_conflict_score"] > 0
+    preserved = candidate_mask & ~conflict
+    torch.testing.assert_close(advantages[preserved], dense_valid[preserved])
 
     perturbed = raw_opd.clone()
     perturbed[~candidate_mask] = -900000.0
