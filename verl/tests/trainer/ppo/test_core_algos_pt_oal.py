@@ -165,6 +165,47 @@ def test_full_pov_interpolates_conflicts_and_preserves_batch_absolute_mass():
     assert not torch.allclose(advantages, raw_opd * q)
 
 
+def test_full_pov_applies_prefix_only_to_outcome_conflicts():
+    raw_opd = torch.tensor(
+        [
+            [1.0, -1.0, 1.0, -1.0],
+            [1.0, -1.0, 1.0, -1.0],
+        ]
+    )
+    mask = torch.ones_like(raw_opd)
+    # The second window has half the teacher support of the first window.
+    teacher_log_probs = torch.tensor(
+        [[0.0, 0.0, -0.69314718056, -0.69314718056]]
+    ).expand_as(raw_opd)
+    teacher_entropy = torch.zeros_like(raw_opd)
+
+    _, _, extras = compute_outcome_aligned_logit_opd_advantage(
+        token_level_rewards=raw_opd,
+        response_mask=mask,
+        config=_pov_config(),
+        index=np.array(["prompt", "prompt"], dtype=object),
+        true_reward_score=torch.tensor([1.0, 0.0]),
+        teacher_sampled_log_probs=teacher_log_probs,
+        teacher_entropy=teacher_entropy,
+        logit_delta_scores=raw_opd,
+    )
+
+    keep = extras["oal_keep_mask"]
+    prefix = extras["pt_oal_prefix_weights"]
+    outcome = extras["oal_outcome_weights"]
+    conflict = extras["oal_conflict_score"] > 0
+
+    torch.testing.assert_close(prefix[:, 2:], torch.full((2, 2), 0.5), atol=1e-5, rtol=1e-5)
+    # Prefix validity may strengthen an existing outcome correction, but it
+    # must not alter raw OPD where outcome and OPD already agree.
+    torch.testing.assert_close(keep[~conflict], torch.ones_like(keep[~conflict]))
+    torch.testing.assert_close(keep[conflict], (outcome * prefix)[conflict])
+    assert keep[0, 2].item() == 1.0  # correct rollout, positive OPD: aligned
+    assert keep[1, 3].item() == 1.0  # wrong rollout, negative OPD: aligned
+    assert keep[0, 3].item() < 0.5   # correct rollout, negative OPD: conflict
+    assert keep[1, 2].item() < 0.5   # wrong rollout, positive OPD: conflict
+
+
 def test_homogeneous_outcomes_fall_back_to_raw_opd_even_with_weak_prefix():
     raw_opd = torch.tensor([[1.0, -0.5, 0.7, -0.2], [-0.3, 0.8, -1.0, 0.4]])
     mask = torch.ones_like(raw_opd)

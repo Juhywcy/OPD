@@ -1459,9 +1459,11 @@ def compute_outcome_aligned_logit_opd_advantage(
     """Prefix-Outcome Validity interpolation for dense OPD.
 
     Informative outcome groups interpolate between dense OPD and an
-    automatically scale-matched outcome target.  Homogeneous groups retain
-    raw OPD.  A final absolute-mass match prevents the validity weights from
-    acting as an implicit learning-rate reduction.
+    automatically scale-matched outcome target.  Prefix validity strengthens
+    that correction only where outcome and OPD conflict; aligned or neutral
+    positions retain raw OPD.  Homogeneous groups also retain raw OPD.  A
+    final absolute-mass match prevents the validity weights from acting as an
+    implicit learning-rate reduction.
     """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
@@ -1625,11 +1627,29 @@ def compute_outcome_aligned_logit_opd_advantage(
             prefix_triggered = torch.zeros_like(prefix_horizons, dtype=mask.dtype)
 
         if outcome_weights.dim() == 3:
-            opd_interpolation_weight = outcome_weights * prefix_weights.unsqueeze(-1)
+            prefix_weight_view = prefix_weights.unsqueeze(-1)
             informative_view = informative_outcome.view(-1, 1, 1)
         else:
-            opd_interpolation_weight = outcome_weights * prefix_weights
+            prefix_weight_view = prefix_weights
             informative_view = informative_outcome.view(-1, 1)
+
+        combined_validity_weight = outcome_weights * prefix_weight_view
+        if oal_cfg["outcome_validation_enabled"]:
+            # Prefix evidence is conditional: it may strengthen a correction
+            # already justified by negative outcome alignment, but it must not
+            # perturb dense OPD that agrees with the independent outcome.
+            # The zero crossing is intrinsic to the alignment definition, so
+            # this gate introduces no threshold or tunable coefficient.
+            outcome_conflict = conflict_score > 0
+            opd_interpolation_weight = torch.where(
+                outcome_conflict,
+                combined_validity_weight,
+                valid_mask,
+            )
+        else:
+            # Prefix-only ablation intentionally applies prefix validity to
+            # every valid OPD position because no outcome gate is available.
+            opd_interpolation_weight = combined_validity_weight
 
         if oal_cfg["outcome_validation_enabled"]:
             interpolated_advantages = (
