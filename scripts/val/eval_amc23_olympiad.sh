@@ -18,6 +18,7 @@ set -x
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
 cd "${REPO_ROOT}"
+PYTHON_BIN=${PYTHON_BIN:-python3}
 
 if [ -z "${SLURM_JOB_ID:-}" ]; then
     LOG_DIR=${LOG_DIR:-logs/val}
@@ -81,10 +82,12 @@ ROLLOUT_NAME=${ROLLOUT_NAME:-vllm}
 LOGGER=${LOGGER:-"['console','swanlab']"}
 
 MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-2048}
-MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-8192}
 MAX_VAL_RESP_LENGTH=${MAX_VAL_RESP_LENGTH:-24000}
-MAX_MODEL_LEN=${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_VAL_RESP_LENGTH))}
-MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-$((MAX_PROMPT_LENGTH + MAX_VAL_RESP_LENGTH))}
+# verl allocates validation responses with data.max_response_length, so use the
+# requested validation limit there as well unless an explicit override is given.
+MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-${MAX_VAL_RESP_LENGTH}}
+MAX_MODEL_LEN=${MAX_MODEL_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESP_LENGTH))}
+MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-$((MAX_PROMPT_LENGTH + MAX_RESP_LENGTH))}
 
 TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-1}
 VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-32}
@@ -111,7 +114,7 @@ if command -v ray >/dev/null 2>&1; then
     sleep 5
 fi
 
-python3 -m verl.trainer.main_ppo \
+"${PYTHON_BIN}" -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.shuffle=False \
     data.validation_shuffle=False \
