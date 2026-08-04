@@ -1458,13 +1458,13 @@ def compute_outcome_aligned_logit_opd_advantage(
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """Prefix-Outcome Validity interpolation for dense OPD.
 
-    Informative outcome groups interpolate between dense OPD and an
-    automatically scale-matched outcome target.  Prefix validity strengthens
-    that correction only where outcome and OPD conflict; aligned or neutral
-    positions retain raw OPD.  Homogeneous groups also retain raw OPD.  A
-    Removed conflict mass is not redistributed across the batch: aligned and
-    neutral positions therefore remain exactly equal to raw OPD, while only
-    outcome-conflicting positions are corrected.
+    Informative outcome groups continuously interpolate between dense OPD and
+    an automatically scale-matched outcome target.  For prefix validity ``p``
+    and outcome-conflict evidence ``c``, the outcome mixing coefficient is
+    ``alpha = c / (p + c)``.  Consequently, zero conflict retains raw OPD
+    exactly and weaker prefix support strengthens non-zero outcome correction
+    without a discontinuous conflict gate.  Homogeneous groups also retain raw
+    OPD.  Removed conflict mass is not redistributed across the batch.
     """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
@@ -1634,28 +1634,31 @@ def compute_outcome_aligned_logit_opd_advantage(
             prefix_weight_view = prefix_weights
             informative_view = informative_outcome.view(-1, 1)
 
-        combined_validity_weight = outcome_weights * prefix_weight_view
         if oal_cfg["outcome_validation_enabled"]:
-            # Prefix evidence is conditional: it may strengthen a correction
-            # already justified by negative outcome alignment, but it must not
-            # perturb dense OPD that agrees with the independent outcome.
-            # The zero crossing is intrinsic to the alignment definition, so
-            # this gate introduces no threshold or tunable coefficient.
-            outcome_conflict = conflict_score > 0
-            opd_interpolation_weight = torch.where(
-                outcome_conflict,
-                combined_validity_weight,
-                valid_mask,
+            # Let prefix validity p modulate only non-zero outcome-conflict
+            # evidence c.  Unlike the previous hard conflict gate with
+            # q=p/(1+c), alpha=c/(p+c) approaches zero continuously as c does,
+            # so c=0 retains dense OPD exactly even when p<1.  Invalid positions
+            # have p=c=0; define alpha=0 there to avoid 0/0 and mask them below.
+            fusion_denominator = prefix_weight_view + conflict_score
+            safe_fusion_denominator = torch.where(
+                fusion_denominator > 0,
+                fusion_denominator,
+                torch.ones_like(fusion_denominator),
             )
+            outcome_mixing_weight = conflict_score / safe_fusion_denominator
+            outcome_mixing_weight = outcome_mixing_weight * valid_mask
+            opd_interpolation_weight = (1.0 - outcome_mixing_weight) * valid_mask
         else:
             # Prefix-only ablation intentionally applies prefix validity to
             # every valid OPD position because no outcome gate is available.
-            opd_interpolation_weight = combined_validity_weight
+            opd_interpolation_weight = outcome_weights * prefix_weight_view
+            outcome_mixing_weight = torch.zeros_like(opd_interpolation_weight)
 
         if oal_cfg["outcome_validation_enabled"]:
             interpolated_advantages = (
                 opd_interpolation_weight * dense_advantages
-                + (1.0 - opd_interpolation_weight) * outcome_target
+                + outcome_mixing_weight * outcome_target
             )
             preliminary_advantages = torch.where(informative_view, interpolated_advantages, dense_advantages)
         else:
@@ -1668,8 +1671,8 @@ def compute_outcome_aligned_logit_opd_advantage(
             # neutral tokens.  A batch-wide scalar would couple unrelated
             # prompts and turn the conflict ratio into a stochastic learning-
             # rate multiplier.  The full method therefore keeps the
-            # unnormalized interpolation directly; this also makes the
-            # conflict gate's promise exact at the final advantage level.
+            # unnormalized interpolation directly, preserving the continuous
+            # fusion formula exactly at the final advantage level.
             mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
             advantages = preliminary_advantages
         else:
