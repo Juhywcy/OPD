@@ -126,7 +126,7 @@ def test_prefix_trust_chunks_actual_valid_positions_when_mask_has_holes():
     assert torch.isfinite(prefix_weights).all()
 
 
-def test_full_pov_interpolates_conflicts_without_rescaling_reliable_tokens():
+def test_full_pov_attenuates_conflicts_without_rescaling_reliable_tokens():
     raw_opd = torch.tensor(
         [
             [1.0, -1.0, 0.5, -0.5],
@@ -155,16 +155,13 @@ def test_full_pov_interpolates_conflicts_without_rescaling_reliable_tokens():
     assert extras["oal_outcome_weights"][1, 1].item() == 1.0
     assert torch.all(extras["pt_oal_prefix_weights"] == 1)
 
-    target_scale = extras["oal_outcome_target_scale"].view(-1, 1)
-    target = extras["oal_group_outcome_advantage"].view(-1, 1) * target_scale
     q = extras["oal_keep_mask"]
-    preliminary = q * raw_opd + (1.0 - q) * target
+    preliminary = q * raw_opd
     torch.testing.assert_close(advantages, preliminary)
     conflict = extras["oal_conflict_score"] > 0
     torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
     torch.testing.assert_close(extras["oal_mass_renorm_scale"], torch.ones(2))
     assert advantages.abs().sum().item() < raw_opd.abs().sum().item()
-    assert not torch.allclose(advantages, raw_opd * q)
 
 
 def test_full_pov_is_continuous_as_conflict_approaches_zero():
@@ -200,7 +197,7 @@ def test_full_pov_is_continuous_as_conflict_approaches_zero():
     )
 
 
-def test_full_pov_with_unit_prefix_matches_outcome_only_interpolation():
+def test_full_pov_with_unit_prefix_matches_outcome_conflict_attenuation():
     raw_opd = torch.tensor([[1.0, -1.0], [1.0, -1.0]])
     advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
         token_level_rewards=raw_opd,
@@ -214,11 +211,7 @@ def test_full_pov_with_unit_prefix_matches_outcome_only_interpolation():
     conflict = extras["oal_conflict_score"]
     expected_alpha = conflict / (1.0 + conflict)
     expected_keep = 1.0 - expected_alpha
-    target = (
-        extras["oal_group_outcome_advantage"].view(-1, 1)
-        * extras["oal_outcome_target_scale"].view(-1, 1)
-    )
-    expected_advantages = expected_keep * raw_opd + expected_alpha * target
+    expected_advantages = expected_keep * raw_opd
 
     torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)
     torch.testing.assert_close(advantages, expected_advantages)
@@ -248,9 +241,11 @@ def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
     torch.testing.assert_close(prefix[1:], torch.tensor([0.5, 0.5]), atol=1e-5, rtol=1e-5)
     assert conflict[2].item() > conflict[1].item() > 0.0
     assert keep[2].item() < keep[1].item() < 1.0
-    # Both raw OPD values are identical and the outcome target is larger, so
-    # stronger conflict evidence must move the result monotonically toward it.
+    # Both raw OPD values are identical and negative, so stronger conflict
+    # evidence must attenuate the magnitude monotonically toward zero without
+    # changing the OPD direction.
     assert advantages[0, 2].item() > advantages[0, 1].item()
+    assert advantages[0, 2].item() < 0.0
 
 
 def test_full_pov_zero_conflict_is_exact_and_padding_is_finite():
