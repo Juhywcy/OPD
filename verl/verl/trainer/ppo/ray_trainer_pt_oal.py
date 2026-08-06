@@ -1605,6 +1605,15 @@ class RayPPOTrainer:
                                 metrics["oal/conflicting_candidate_ratio"] = (
                                     ((conflict_score > 0).float() * candidate_mask).sum() / valid_candidates
                                 ).item()
+                            if "oal_outcome_correction_weight" in batch.batch.keys():
+                                correction_weight = batch.batch["oal_outcome_correction_weight"].float()
+                                metrics["oal/outcome_correction_weight_mean"] = (
+                                    (correction_weight * candidate_mask).sum() / valid_candidates
+                                ).item()
+                                corrected = (correction_weight > 0).float() * candidate_mask
+                                metrics["oal/corrected_candidate_ratio"] = (
+                                    corrected.sum() / valid_candidates
+                                ).item()
                             if "pt_oal_prefix_weights" in batch.batch.keys():
                                 valid_tokens = response_mask.float().sum().clamp_min(1)
                                 response_lens = response_mask.float().sum(dim=-1).clamp_min(1)
@@ -2977,7 +2986,9 @@ class RayPPOTrainer:
                         "oal_normalized_logit_delta",
                         "oal_outcome_alignment",
                         "oal_conflict_score",
+                        "oal_outcome_correction_weight",
                         "oal_outcome_weights",
+                        "oal_outcome_target",
                         "oal_outcome_target_scale",
                         "oal_informative_outcome_mask",
                         "oal_pre_renorm_mass_ratio",

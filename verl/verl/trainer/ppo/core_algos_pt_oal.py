@@ -1458,14 +1458,17 @@ def compute_outcome_aligned_logit_opd_advantage(
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """Prefix-Outcome Validity interpolation for dense OPD.
 
-    Informative outcome groups conservatively attenuate dense OPD only when
-    two independent signals agree: the prefix is unreliable and the OPD
-    direction conflicts with the trajectory outcome.  For prefix validity
-    ``p`` and outcome-conflict evidence ``c``, the correction strength is the
-    parameter-free conjunction ``alpha = (1 - p) * c``.  Therefore either a
-    fully reliable prefix (``p = 1``) or zero outcome conflict (``c = 0``)
-    recovers raw OPD exactly.  Homogeneous groups also retain raw OPD, and
-    removed conflict mass is not redistributed across the batch.
+    Informative outcome groups correct dense OPD only when two independent
+    signals agree: the prefix is unreliable and the OPD direction conflicts
+    with the trajectory outcome.  Prefix invalidity and directional conflict
+    are combined with their harmonic conjunction, which stays on the scale of
+    its inputs instead of vanishing as their product.  The resulting weight
+    continuously interpolates raw OPD toward a group-centered outcome target,
+    robustly scaled by each response's median absolute OPD magnitude.
+
+    The construction adds no tunable mixing coefficient.  A fully reliable
+    prefix, zero directional conflict, or a homogeneous outcome group recovers
+    raw OPD exactly.
     """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
@@ -1553,7 +1556,14 @@ def compute_outcome_aligned_logit_opd_advantage(
         normalized_delta = _oal_normalized_logit_delta(align_scores, valid_mask)
         if oal_cfg["outcome_validation_enabled"]:
             group_outcome_advantage = _oal_group_centered_outcome_advantage(outcome_scores, index)
-            outcome_alignment = group_outcome_advantage.view(*outcome_view_shape) * normalized_delta
+            # The centered outcome magnitude belongs in the outcome target,
+            # not in conflict detection.  Multiplying it into the conflict
+            # score as well makes the correction depend quadratically on
+            # group accuracy and nearly disables it for moderately mixed
+            # groups.  Directional alignment is sufficient to decide whether
+            # OPD points against the independently observed outcome.
+            outcome_direction = torch.sign(group_outcome_advantage).view(*outcome_view_shape)
+            outcome_alignment = outcome_direction * normalized_delta
             conflict_score = torch.relu(-outcome_alignment) * valid_mask
             outcome_weights = valid_mask / (1.0 + conflict_score)
         else:
@@ -1564,6 +1574,9 @@ def compute_outcome_aligned_logit_opd_advantage(
 
         outcome_target_scale = _oal_response_median_abs_scale(dense_advantages, valid_mask)
         informative_outcome = group_outcome_advantage != 0
+        outcome_target = (
+            group_outcome_advantage * outcome_target_scale
+        ).view(*outcome_view_shape) * valid_mask
 
         positive_outcome = group_outcome_advantage.view(*outcome_view_shape) > 0
         negative_outcome = group_outcome_advantage.view(*outcome_view_shape) < 0
@@ -1629,37 +1642,46 @@ def compute_outcome_aligned_logit_opd_advantage(
             prefix_weight_view = prefix_weights
 
         if oal_cfg["outcome_validation_enabled"]:
-            # A response-level outcome is too coarse to veto token-level OPD
-            # by itself.  Require the prefix signal to independently mark the
-            # same position as unreliable:
+            # A response-level outcome is too coarse to correct token-level
+            # OPD by itself.  Require prefix invalidity at the same position.
+            # The harmonic conjunction is a parameter-free fuzzy AND:
             #
-            #     correction = (1 - p) * c,
-            #     keep       = 1 - correction.
+            #              2 (1 - p) c
+            #     alpha = -----------------,
+            #              (1 - p) + c
             #
-            # This parameter-free conjunction is identity preserving when
-            # either signal is absent and cannot flip the raw OPD direction.
+            # It is zero if either signal is absent, bounded by one, and does
+            # not suffer the scale collapse of the raw product (1-p)c.
             prefix_invalidity = (1.0 - prefix_weight_view).clamp(0.0, 1.0)
-            conflict_attenuation_weight = prefix_invalidity * conflict_score
-            conflict_attenuation_weight = conflict_attenuation_weight * valid_mask
-            opd_interpolation_weight = (1.0 - conflict_attenuation_weight) * valid_mask
+            conjunction_denominator = prefix_invalidity + conflict_score
+            outcome_correction_weight = torch.where(
+                conjunction_denominator > 0,
+                2.0 * prefix_invalidity * conflict_score / conjunction_denominator,
+                torch.zeros_like(conjunction_denominator),
+            ) * valid_mask
+            opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
         else:
             # Prefix-only ablation intentionally applies prefix validity to
             # every valid OPD position because no outcome gate is available.
             opd_interpolation_weight = outcome_weights * prefix_weight_view
 
-        # Full POV only attenuates outcome-conflicting OPD; the prefix-only
-        # ablation redistributes raw OPD across all valid positions.  Both use
-        # the same multiplicative form, while their keep weights above encode
-        # the distinct gating semantics.
-        preliminary_advantages = dense_advantages * opd_interpolation_weight
+        # Full POV replaces only jointly invalid-and-conflicting OPD with a
+        # scale-matched outcome target.  The prefix-only ablation retains its
+        # historical positional reweighting for a clean component comparison.
+        if oal_cfg["outcome_validation_enabled"]:
+            preliminary_advantages = (
+                dense_advantages * opd_interpolation_weight
+                + outcome_target * outcome_correction_weight
+            ) * valid_mask
+        else:
+            outcome_correction_weight = torch.zeros_like(valid_mask)
+            preliminary_advantages = dense_advantages * opd_interpolation_weight
 
         if oal_cfg["outcome_validation_enabled"]:
-            # Do not redistribute removed conflict mass onto aligned or
-            # neutral tokens.  A batch-wide scalar would couple unrelated
-            # prompts and turn the conflict ratio into a stochastic learning-
-            # rate multiplier.  The full method therefore keeps the
-            # unnormalized attenuation directly, preserving the continuous
-            # conflict filter exactly at the final advantage level.
+            # Do not apply a batch-wide mass normalization: it would couple
+            # unrelated prompts and turn the conflict ratio into a stochastic
+            # learning-rate multiplier.  The convex correction is already
+            # locally bounded by its raw OPD and scale-matched outcome target.
             mass_renorm_scale = torch.ones((), device=mask.device, dtype=token_level_rewards.dtype)
             advantages = preliminary_advantages
         else:
@@ -1716,7 +1738,9 @@ def compute_outcome_aligned_logit_opd_advantage(
         "oal_normalized_logit_delta": normalized_delta.detach(),
         "oal_outcome_alignment": outcome_alignment.detach(),
         "oal_conflict_score": conflict_score.detach(),
+        "oal_outcome_correction_weight": outcome_correction_weight.detach(),
         "oal_outcome_weights": outcome_weights.detach(),
+        "oal_outcome_target": outcome_target.detach(),
         "oal_outcome_target_scale": outcome_target_scale.detach(),
         "oal_informative_outcome_mask": informative_outcome.to(dtype=mask.dtype).detach(),
         "oal_pre_renorm_mass_ratio": pre_renorm_mass_ratio.detach(),
