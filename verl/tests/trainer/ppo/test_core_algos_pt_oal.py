@@ -126,7 +126,7 @@ def test_prefix_trust_chunks_actual_valid_positions_when_mask_has_holes():
     assert torch.isfinite(prefix_weights).all()
 
 
-def test_full_pov_attenuates_conflicts_without_rescaling_reliable_tokens():
+def test_full_pov_requires_joint_prefix_and_outcome_conflict():
     raw_opd = torch.tensor(
         [
             [1.0, -1.0, 0.5, -0.5],
@@ -158,10 +158,11 @@ def test_full_pov_attenuates_conflicts_without_rescaling_reliable_tokens():
     q = extras["oal_keep_mask"]
     preliminary = q * raw_opd
     torch.testing.assert_close(advantages, preliminary)
-    conflict = extras["oal_conflict_score"] > 0
-    torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
+    # Outcome conflict alone must not change OPD when prefix validity is one.
+    torch.testing.assert_close(q, torch.ones_like(q))
+    torch.testing.assert_close(advantages, raw_opd)
     torch.testing.assert_close(extras["oal_mass_renorm_scale"], torch.ones(2))
-    assert advantages.abs().sum().item() < raw_opd.abs().sum().item()
+    assert advantages.abs().sum().item() == raw_opd.abs().sum().item()
 
 
 def test_full_pov_is_continuous_as_conflict_approaches_zero():
@@ -197,7 +198,7 @@ def test_full_pov_is_continuous_as_conflict_approaches_zero():
     )
 
 
-def test_full_pov_with_unit_prefix_matches_outcome_conflict_attenuation():
+def test_full_pov_with_unit_prefix_falls_back_to_raw_opd():
     raw_opd = torch.tensor([[1.0, -1.0], [1.0, -1.0]])
     advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
         token_level_rewards=raw_opd,
@@ -208,13 +209,8 @@ def test_full_pov_with_unit_prefix_matches_outcome_conflict_attenuation():
         logit_delta_scores=raw_opd,
     )
 
-    conflict = extras["oal_conflict_score"]
-    expected_alpha = conflict / (1.0 + conflict)
-    expected_keep = 1.0 - expected_alpha
-    expected_advantages = expected_keep * raw_opd
-
-    torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)
-    torch.testing.assert_close(advantages, expected_advantages)
+    torch.testing.assert_close(extras["oal_keep_mask"], torch.ones_like(raw_opd))
+    torch.testing.assert_close(advantages, raw_opd)
 
 
 def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
@@ -281,16 +277,16 @@ def test_full_pov_zero_conflict_is_exact_and_padding_is_finite():
     torch.testing.assert_close(extras["oal_mass_renorm_scale"], torch.ones(2))
 
 
-def test_full_pov_fp16_uses_exact_small_positive_denominator():
+def test_full_pov_fp16_joint_gate_remains_finite():
     raw_opd = torch.tensor([[1.0, -1.0, 1.0], [1.0, -1.0, 1.0]], dtype=torch.float16)
     mask = torch.ones_like(raw_opd)
-    # Very weak support and tiny conflict evidence make 0 < p+c < fp16.tiny.
+    # Very weak support and tiny conflict evidence must remain finite.
     teacher_log_probs = torch.tensor([[0.0, -20.0, -20.0]], dtype=torch.float16).expand_as(raw_opd)
     logit_delta = torch.tensor(
         [[1.0, -1e-6, 1.0], [-1.0, -1.0, -1.0]], dtype=torch.float16
     )
 
-    _, _, extras = compute_outcome_aligned_logit_opd_advantage(
+    advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
         token_level_rewards=raw_opd,
         response_mask=mask,
         config=_pov_config(window_size=1),
@@ -303,10 +299,9 @@ def test_full_pov_fp16_uses_exact_small_positive_denominator():
 
     prefix = extras["pt_oal_prefix_weights"][0, 1]
     conflict = extras["oal_conflict_score"][0, 1]
-    denominator = prefix + conflict
-    assert 0.0 < denominator.item() < torch.finfo(torch.float16).tiny
-    expected_keep = 1.0 - conflict / denominator
+    expected_keep = 1.0 - (1.0 - prefix) * conflict
     torch.testing.assert_close(extras["oal_keep_mask"][0, 1], expected_keep)
+    assert torch.isfinite(advantages).all()
 
 
 def test_full_pov_does_not_couple_unrelated_prompt_groups():
@@ -379,9 +374,7 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     # Prefix validity may strengthen an existing outcome correction, but it
     # must not alter raw OPD where outcome and OPD already agree.
     torch.testing.assert_close(keep[~conflict], torch.ones_like(keep[~conflict]))
-    expected_alpha = extras["oal_conflict_score"] / (
-        prefix + extras["oal_conflict_score"]
-    )
+    expected_alpha = (1.0 - prefix) * extras["oal_conflict_score"]
     expected_keep = (1.0 - expected_alpha) * mask
     torch.testing.assert_close(keep[conflict], expected_keep[conflict])
     torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
@@ -389,8 +382,8 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     assert keep[1, 3].item() == 1.0  # wrong rollout, negative OPD: aligned
     assert keep[0, 3].item() < 1.0   # correct rollout, negative OPD: conflict
     assert keep[1, 2].item() < 1.0   # wrong rollout, positive OPD: conflict
-    # At equal conflict evidence, weaker prefix support increases alpha and
-    # therefore decreases the OPD keep factor continuously.
+    # At equal conflict evidence, weaker prefix support increases the joint
+    # correction and therefore decreases the OPD keep factor continuously.
     assert keep[0, 3].item() < keep[0, 1].item()
     assert keep[1, 2].item() < keep[1, 0].item()
 
@@ -592,8 +585,7 @@ def test_topk_full_pov_broadcasts_prefix_and_masks_invalid_candidates():
 
     prefix = extras["pt_oal_prefix_weights"].unsqueeze(-1)
     conflict = extras["oal_conflict_score"]
-    denominator = prefix + conflict
-    expected_alpha = torch.where(denominator > 0, conflict / denominator.clamp_min(1e-12), 0.0)
+    expected_alpha = (1.0 - prefix) * conflict
     expected_keep = (1.0 - expected_alpha) * candidate_mask
 
     torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)

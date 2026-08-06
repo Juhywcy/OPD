@@ -1458,13 +1458,14 @@ def compute_outcome_aligned_logit_opd_advantage(
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """Prefix-Outcome Validity interpolation for dense OPD.
 
-    Informative outcome groups continuously interpolate between dense OPD and
-    an automatically scale-matched outcome target.  For prefix validity ``p``
-    and outcome-conflict evidence ``c``, the outcome mixing coefficient is
-    ``alpha = c / (p + c)``.  Consequently, zero conflict retains raw OPD
-    exactly and weaker prefix support strengthens non-zero outcome correction
-    without a discontinuous conflict gate.  Homogeneous groups also retain raw
-    OPD.  Removed conflict mass is not redistributed across the batch.
+    Informative outcome groups conservatively attenuate dense OPD only when
+    two independent signals agree: the prefix is unreliable and the OPD
+    direction conflicts with the trajectory outcome.  For prefix validity
+    ``p`` and outcome-conflict evidence ``c``, the correction strength is the
+    parameter-free conjunction ``alpha = (1 - p) * c``.  Therefore either a
+    fully reliable prefix (``p = 1``) or zero outcome conflict (``c = 0``)
+    recovers raw OPD exactly.  Homogeneous groups also retain raw OPD, and
+    removed conflict mass is not redistributed across the batch.
     """
     with torch.no_grad():
         oal_cfg = _oal_get_config(config)
@@ -1628,24 +1629,17 @@ def compute_outcome_aligned_logit_opd_advantage(
             prefix_weight_view = prefix_weights
 
         if oal_cfg["outcome_validation_enabled"]:
-            # Use the scalar outcome only to detect whether the raw OPD
-            # direction conflicts with correctness; never inject that coarse
-            # scalar as a replacement token-level direction.  Prefix validity
-            # p controls how much conflict evidence c is trusted:
+            # A response-level outcome is too coarse to veto token-level OPD
+            # by itself.  Require the prefix signal to independently mark the
+            # same position as unreliable:
             #
-            #     keep = 1 - c / (p + c) = p / (p + c).
+            #     correction = (1 - p) * c,
+            #     keep       = 1 - correction.
             #
-            # Thus conflict-free OPD is preserved exactly, conflict is
-            # attenuated continuously without a sign flip, and weaker prefix
-            # support strengthens attenuation.  Invalid positions have p=c=0;
-            # define the attenuation as zero there and mask them below.
-            fusion_denominator = prefix_weight_view + conflict_score
-            safe_fusion_denominator = torch.where(
-                fusion_denominator > 0,
-                fusion_denominator,
-                torch.ones_like(fusion_denominator),
-            )
-            conflict_attenuation_weight = conflict_score / safe_fusion_denominator
+            # This parameter-free conjunction is identity preserving when
+            # either signal is absent and cannot flip the raw OPD direction.
+            prefix_invalidity = (1.0 - prefix_weight_view).clamp(0.0, 1.0)
+            conflict_attenuation_weight = prefix_invalidity * conflict_score
             conflict_attenuation_weight = conflict_attenuation_weight * valid_mask
             opd_interpolation_weight = (1.0 - conflict_attenuation_weight) * valid_mask
         else:
