@@ -3113,6 +3113,54 @@ class RayPPOTrainer:
                 if isinstance(self.train_dataloader.sampler, AbstractCurriculumSampler):
                     self.train_dataloader.sampler.update(batch=batch)
 
+                # Keep a compact, machine-readable heartbeat in the plain-text
+                # training log.  This makes matched 1.5B/7B diagnostics
+                # auditable even when the remote tracking UI is temporarily
+                # unavailable, without introducing another logging backend or
+                # any algorithm hyperparameter.
+                if "oal/outcome_correction_weight_mean" in metrics:
+                    monitor_keys = (
+                        "training/global_step",
+                        "training/epoch",
+                        "actor/grad_norm",
+                        "oal/outcome_correction_weight_mean",
+                        "oal/corrected_candidate_ratio",
+                        "oal/conflict_score_mean",
+                        "oal/conflicting_candidate_ratio",
+                        "oal/group_outcome_advantage_abs_mean",
+                        "oal/informative_outcome_response_ratio",
+                        "oal/outcome_target_scale_mean",
+                        "oal/pre_renorm_mass_ratio_mean",
+                        "oal/active_adv_abs_mass_ratio",
+                        "pt_oal/prefix_weight_mean",
+                        "pt_oal/prefix_weight_min",
+                    )
+                    monitor_payload = {key: metrics[key] for key in monitor_keys if key in metrics}
+                    monitor_payload.update(
+                        {
+                            key: value
+                            for key, value in metrics.items()
+                            if key.startswith("val-core/")
+                            and (key.endswith("mean@16") or key.endswith("best@16"))
+                        }
+                    )
+
+                    def _monitor_json_value(value):
+                        if isinstance(value, torch.Tensor):
+                            value = value.detach().float().mean().item()
+                        elif isinstance(value, np.generic):
+                            value = value.item()
+                        return value
+
+                    print(
+                        "[pov-monitor] "
+                        + json.dumps(
+                            {key: _monitor_json_value(value) for key, value in monitor_payload.items()},
+                            sort_keys=True,
+                        ),
+                        flush=True,
+                    )
+
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
 
