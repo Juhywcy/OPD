@@ -1576,6 +1576,10 @@ class RayPPOTrainer:
                                     "oal_informative_outcome_mask", group_advantage.abs() > 0
                                 ).float()
                                 metrics["oal/informative_outcome_response_ratio"] = informative_mask.mean().item()
+                            if "oal_outcome_confidence" in batch.batch.keys():
+                                metrics["oal/outcome_confidence_mean"] = (
+                                    batch.batch["oal_outcome_confidence"].float().mean().item()
+                                )
                             if "oal_outcome_target_scale" in batch.batch.keys():
                                 metrics["oal/outcome_target_scale_mean"] = (
                                     batch.batch["oal_outcome_target_scale"].float().mean().item()
@@ -2983,6 +2987,7 @@ class RayPPOTrainer:
                         "oal_outcome_scores",
                         "oal_correct_mask",
                         "oal_group_outcome_advantage",
+                        "oal_outcome_confidence",
                         "oal_normalized_logit_delta",
                         "oal_outcome_alignment",
                         "oal_conflict_score",
@@ -3128,6 +3133,7 @@ class RayPPOTrainer:
                         "oal/conflict_score_mean",
                         "oal/conflicting_candidate_ratio",
                         "oal/group_outcome_advantage_abs_mean",
+                        "oal/outcome_confidence_mean",
                         "oal/informative_outcome_response_ratio",
                         "oal/outcome_target_scale_mean",
                         "oal/pre_renorm_mass_ratio_mean",

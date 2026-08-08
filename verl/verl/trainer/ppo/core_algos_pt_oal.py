@@ -1324,6 +1324,40 @@ def _oal_group_centered_outcome_advantage(outcome_scores, index):
     return advantages
 
 
+def _oal_group_relative_outcome_confidence(group_outcome_advantage, index):
+    """Normalize outcome evidence within each prompt group without a threshold.
+
+    Group centering says which rollout is better or worse than its siblings.
+    Its absolute magnitude says how distinctive that observation is.  Dividing
+    by the largest absolute residual in the same group maps this evidence to
+    [0, 1] and preserves the strongest minority outcome while reducing the
+    influence of less distinctive majority outcomes.  Homogeneous and
+    singleton groups remain exactly zero.
+    """
+    if index is None:
+        raise ValueError("POV outcome validation requires response-group ids in `index`.")
+    if len(index) != group_outcome_advantage.shape[0]:
+        raise ValueError(
+            f"POV received {len(index)} response-group ids for a batch of "
+            f"{group_outcome_advantage.shape[0]} responses."
+        )
+
+    id_to_positions = defaultdict(list)
+    for batch_idx, group_id in enumerate(index):
+        id_to_positions[group_id].append(batch_idx)
+
+    confidence = torch.zeros_like(group_outcome_advantage)
+    for positions in id_to_positions.values():
+        position_tensor = torch.as_tensor(
+            positions, device=group_outcome_advantage.device, dtype=torch.long
+        )
+        group_magnitude = group_outcome_advantage.index_select(0, position_tensor).abs()
+        max_magnitude = group_magnitude.max()
+        if bool((max_magnitude > 0).item()):
+            confidence[position_tensor] = group_magnitude / max_magnitude
+    return confidence
+
+
 def _oal_response_median_abs_scale(values, valid_mask):
     """Return one robust OPD magnitude per response without introducing a scale hyperparameter."""
     scales = torch.zeros(values.shape[0], device=values.device, dtype=values.dtype)
@@ -1462,9 +1496,12 @@ def compute_outcome_aligned_logit_opd_advantage(
     signals agree: the prefix is unreliable and the OPD direction conflicts
     with the trajectory outcome.  Prefix invalidity and directional conflict
     are combined with their harmonic conjunction, which stays on the scale of
-    its inputs instead of vanishing as their product.  The resulting weight
-    continuously interpolates raw OPD toward a group-centered outcome target,
-    robustly scaled by each response's median absolute OPD magnitude.
+    its inputs instead of vanishing as their product.  A parameter-free,
+    within-group outcome confidence then prevents weak majority evidence from
+    receiving the same correction strength as a distinctive minority outcome.
+    The resulting weight continuously interpolates raw OPD toward a
+    group-centered outcome target, robustly scaled by each response's median
+    absolute OPD magnitude.
 
     The construction adds no tunable mixing coefficient.  A fully reliable
     prefix, zero directional conflict, or a homogeneous outcome group recovers
@@ -1556,6 +1593,9 @@ def compute_outcome_aligned_logit_opd_advantage(
         normalized_delta = _oal_normalized_logit_delta(align_scores, valid_mask)
         if oal_cfg["outcome_validation_enabled"]:
             group_outcome_advantage = _oal_group_centered_outcome_advantage(outcome_scores, index)
+            outcome_confidence = _oal_group_relative_outcome_confidence(
+                group_outcome_advantage, index
+            )
             # The centered outcome magnitude belongs in the outcome target,
             # not in conflict detection.  Multiplying it into the conflict
             # score as well makes the correction depend quadratically on
@@ -1568,6 +1608,7 @@ def compute_outcome_aligned_logit_opd_advantage(
             outcome_weights = valid_mask / (1.0 + conflict_score)
         else:
             group_outcome_advantage = torch.zeros_like(outcome_scores)
+            outcome_confidence = torch.zeros_like(outcome_scores)
             outcome_alignment = torch.zeros_like(align_scores)
             conflict_score = torch.zeros_like(align_scores)
             outcome_weights = valid_mask
@@ -1651,14 +1692,24 @@ def compute_outcome_aligned_logit_opd_advantage(
             #              (1 - p) + c
             #
             # It is zero if either signal is absent, bounded by one, and does
-            # not suffer the scale collapse of the raw product (1-p)c.
+            # not suffer the scale collapse of the raw product (1-p)c.  The
+            # group-relative outcome confidence q then gives
+            #
+            #                  2 (1 - p) c
+            #     alpha = q * -----------------,
+            #                  (1 - p) + c
+            #
+            # so weak outcome residuals cannot overrule dense OPD as strongly
+            # as the most distinctive outcome in the same rollout group.
             prefix_invalidity = (1.0 - prefix_weight_view).clamp(0.0, 1.0)
             conjunction_denominator = prefix_invalidity + conflict_score
-            outcome_correction_weight = torch.where(
+            joint_invalidity = torch.where(
                 conjunction_denominator > 0,
                 2.0 * prefix_invalidity * conflict_score / conjunction_denominator,
                 torch.zeros_like(conjunction_denominator),
             ) * valid_mask
+            outcome_confidence_view = outcome_confidence.view(*outcome_view_shape)
+            outcome_correction_weight = joint_invalidity * outcome_confidence_view * valid_mask
             opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
         else:
             # Prefix-only ablation intentionally applies prefix validity to
@@ -1735,6 +1786,7 @@ def compute_outcome_aligned_logit_opd_advantage(
         "oal_outcome_scores": outcome_scores.detach(),
         "oal_correct_mask": correct.to(dtype=mask.dtype).detach(),
         "oal_group_outcome_advantage": group_outcome_advantage.detach(),
+        "oal_outcome_confidence": outcome_confidence.detach(),
         "oal_normalized_logit_delta": normalized_delta.detach(),
         "oal_outcome_alignment": outcome_alignment.detach(),
         "oal_conflict_score": conflict_score.detach(),

@@ -4,6 +4,7 @@ import torch
 
 from verl.trainer.ppo.core_algos_pt_oal import (
     _oal_group_centered_outcome_advantage,
+    _oal_group_relative_outcome_confidence,
     _oal_normalized_logit_delta,
     _pt_oal_prefix_trust_weights,
     compute_outcome_aligned_logit_opd_advantage,
@@ -43,6 +44,20 @@ def test_group_centered_outcome_advantage_is_parameter_free():
 def test_group_centered_outcome_advantage_requires_group_ids():
     with pytest.raises(ValueError, match="response-group ids"):
         _oal_group_centered_outcome_advantage(torch.tensor([1.0, 0.0]), None)
+
+
+def test_group_relative_outcome_confidence_preserves_distinctive_minority():
+    advantages = torch.tensor([0.75, -0.25, -0.25, -0.25, 0.0, 0.0])
+    group_ids = np.array(
+        ["mixed", "mixed", "mixed", "mixed", "same", "same"], dtype=object
+    )
+
+    confidence = _oal_group_relative_outcome_confidence(advantages, group_ids)
+
+    torch.testing.assert_close(
+        confidence,
+        torch.tensor([1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0, 0.0]),
+    )
 
 
 def test_normalized_logit_delta_ignores_padding_when_computing_scale():
@@ -253,7 +268,7 @@ def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
     assert advantages[0, 2].item() < 0.0
 
 
-def test_directional_conflict_is_not_shrunk_by_group_outcome_magnitude():
+def test_outcome_confidence_reduces_weak_majority_corrections():
     raw_opd = torch.tensor(
         [[1.0, -1.0], [-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0]]
     )
@@ -273,8 +288,9 @@ def test_directional_conflict_is_not_shrunk_by_group_outcome_magnitude():
     )
 
     # The single correct rollout has centered outcome +0.75 while each wrong
-    # rollout has -0.25.  Conflict detection and prefix gating use direction,
-    # so equal-magnitude directional conflicts receive equal correction.
+    # rollout has -0.25. Conflict detection remains purely directional, while
+    # the group-relative confidence keeps the distinctive minority at one and
+    # reduces each weak majority correction to one third.
     torch.testing.assert_close(
         extras["oal_group_outcome_advantage"],
         torch.tensor([0.75, -0.25, -0.25, -0.25]),
@@ -284,9 +300,11 @@ def test_directional_conflict_is_not_shrunk_by_group_outcome_magnitude():
         torch.tanh(torch.ones(4)),
     )
     torch.testing.assert_close(
-        extras["oal_outcome_correction_weight"][:, 1],
-        extras["oal_outcome_correction_weight"][0, 1].expand(4),
+        extras["oal_outcome_confidence"],
+        torch.tensor([1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]),
     )
+    correction = extras["oal_outcome_correction_weight"][:, 1]
+    torch.testing.assert_close(correction[1:], (correction[0] / 3.0).expand(3))
     assert advantages[0, 1].item() > raw_opd[0, 1].item()
     assert torch.all(advantages[1:, 1] < raw_opd[1:, 1])
 
@@ -461,6 +479,7 @@ def test_homogeneous_outcomes_fall_back_to_raw_opd_even_with_weak_prefix():
     )
 
     torch.testing.assert_close(extras["oal_group_outcome_advantage"], torch.zeros(2))
+    torch.testing.assert_close(extras["oal_outcome_confidence"], torch.zeros(2))
     assert extras["pt_oal_prefix_weights"][0, -1].item() < 1.0
     torch.testing.assert_close(advantages, raw_opd)
 
