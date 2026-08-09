@@ -261,9 +261,10 @@ def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
     prefix = extras["pt_oal_prefix_weights"][0]
     torch.testing.assert_close(prefix[1:], torch.tensor([0.5, 0.5]), atol=1e-5, rtol=1e-5)
     assert conflict[2].item() > conflict[1].item() > 0.0
-    assert keep[2].item() < keep[1].item() < 1.0
+    torch.testing.assert_close(keep, torch.ones_like(keep))
     # Both raw OPD values are identical and negative, so stronger conflict
-    # evidence must move them monotonically toward the positive outcome target.
+    # evidence must add a larger positive outcome residual while leaving the
+    # raw OPD coefficient unchanged.
     assert advantages[0, 2].item() > advantages[0, 1].item()
     assert advantages[0, 2].item() < 0.0
 
@@ -364,8 +365,8 @@ def test_full_pov_fp16_joint_gate_remains_finite():
 
     prefix = extras["pt_oal_prefix_weights"][0, 1]
     conflict = extras["oal_conflict_score"][0, 1]
-    expected_keep = 1.0 - _harmonic_joint(prefix, conflict)
-    torch.testing.assert_close(extras["oal_keep_mask"][0, 1], expected_keep)
+    assert _harmonic_joint(prefix, conflict).item() > 0.0
+    torch.testing.assert_close(extras["oal_keep_mask"], mask)
     assert torch.isfinite(advantages).all()
 
 
@@ -436,27 +437,23 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     conflict = extras["oal_conflict_score"] > 0
 
     torch.testing.assert_close(prefix[:, 2:], torch.full((2, 2), 0.5), atol=1e-5, rtol=1e-5)
-    # Prefix validity may strengthen an existing outcome correction, but it
-    # must not alter raw OPD where outcome and OPD already agree.
-    torch.testing.assert_close(keep[~conflict], torch.ones_like(keep[~conflict]))
+    # Prefix validity may strengthen an existing outcome residual, but raw OPD
+    # is preserved at every valid position.
+    torch.testing.assert_close(keep, mask)
     expected_alpha = _harmonic_joint(prefix, extras["oal_conflict_score"])
-    expected_keep = (1.0 - expected_alpha) * mask
-    torch.testing.assert_close(keep[conflict], expected_keep[conflict])
     torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
     assert keep[0, 2].item() == 1.0  # correct rollout, positive OPD: aligned
     assert keep[1, 3].item() == 1.0  # wrong rollout, negative OPD: aligned
-    assert keep[0, 3].item() < 1.0   # correct rollout, negative OPD: conflict
-    assert keep[1, 2].item() < 1.0   # wrong rollout, positive OPD: conflict
     expected_target = (
         extras["oal_group_outcome_advantage"]
         * extras["oal_outcome_target_scale"]
     ).unsqueeze(-1).expand_as(raw_opd)
-    expected_advantages = raw_opd * expected_keep + expected_target * expected_alpha
+    expected_advantages = raw_opd + expected_target * expected_alpha
     torch.testing.assert_close(advantages, expected_advantages)
-    # At equal conflict evidence, weaker prefix support increases the joint
-    # correction and therefore decreases the OPD coefficient continuously.
-    assert keep[0, 3].item() < keep[0, 1].item()
-    assert keep[1, 2].item() < keep[1, 0].item()
+    # At equal conflict evidence, weaker prefix support increases the outcome
+    # residual continuously without changing the OPD coefficient.
+    assert expected_alpha[0, 3].item() > expected_alpha[0, 1].item()
+    assert expected_alpha[1, 2].item() > expected_alpha[1, 0].item()
 
 
 def test_homogeneous_outcomes_fall_back_to_raw_opd_even_with_weak_prefix():
@@ -658,9 +655,9 @@ def test_topk_full_pov_broadcasts_prefix_and_masks_invalid_candidates():
     prefix = extras["pt_oal_prefix_weights"].unsqueeze(-1)
     conflict = extras["oal_conflict_score"]
     expected_alpha = _harmonic_joint(prefix, conflict)
-    expected_keep = (1.0 - expected_alpha) * candidate_mask
 
-    torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)
+    assert expected_alpha[candidate_mask].max().item() > 0.0
+    torch.testing.assert_close(extras["oal_keep_mask"], candidate_mask.to(raw_opd.dtype))
     assert torch.isfinite(advantages).all()
     assert torch.all(advantages[~candidate_mask] == 0)
 

@@ -1710,15 +1710,23 @@ def compute_outcome_aligned_logit_opd_advantage(
             ) * valid_mask
             outcome_confidence_view = outcome_confidence.view(*outcome_view_shape)
             outcome_correction_weight = joint_invalidity * outcome_confidence_view * valid_mask
-            opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
+            # Preserve the dense OPD gradient exactly and use the independently
+            # validated outcome only as a gated residual.  Replacing an alpha
+            # fraction of raw OPD weakens the teacher signal precisely at the
+            # detected conflict positions; that is especially harmful for a
+            # strong student, even when alpha is small.  Residual correction
+            # keeps the OPD baseline as an exact backbone and introduces no
+            # additional mixing hyperparameter.
+            opd_interpolation_weight = valid_mask
         else:
             # Prefix-only ablation intentionally applies prefix validity to
             # every valid OPD position because no outcome gate is available.
             opd_interpolation_weight = outcome_weights * prefix_weight_view
 
-        # Full POV replaces only jointly invalid-and-conflicting OPD with a
-        # scale-matched outcome target.  The prefix-only ablation retains its
-        # historical positional reweighting for a clean component comparison.
+        # Full POV adds a scale-matched outcome residual only at jointly
+        # invalid-and-conflicting positions.  The raw OPD term is never
+        # attenuated.  The prefix-only ablation retains its historical
+        # positional reweighting for a clean component comparison.
         if oal_cfg["outcome_validation_enabled"]:
             preliminary_advantages = (
                 dense_advantages * opd_interpolation_weight
