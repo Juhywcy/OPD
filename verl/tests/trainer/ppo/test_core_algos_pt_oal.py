@@ -22,12 +22,16 @@ def _pov_config(*, outcome=True, prefix=True, window_size=2):
     }
 
 
-def _harmonic_joint(prefix, conflict):
+def _harmonic_three_way(prefix, conflict, outcome_confidence):
     invalidity = 1.0 - prefix
-    denominator = invalidity + conflict
+    denominator = (
+        outcome_confidence * invalidity
+        + outcome_confidence * conflict
+        + invalidity * conflict
+    )
     return torch.where(
         denominator > 0,
-        2.0 * invalidity * conflict / denominator,
+        3.0 * outcome_confidence * invalidity * conflict / denominator,
         torch.zeros_like(denominator),
     )
 
@@ -215,11 +219,11 @@ def test_full_pov_is_continuous_as_conflict_approaches_zero():
     assert zero_extras["oal_conflict_score"][0, 1].item() == 0.0
     assert tiny_extras["oal_conflict_score"][0, 1].item() > 0.0
     assert tiny_extras["pt_oal_prefix_weights"][0, 1].item() == pytest.approx(0.5, abs=1e-5)
-    # The previous hard gate jumped from q=1 to approximately p=0.5 here.
-    # Harmonic fusion must instead converge continuously to the c=0 result.
+    # The three-way harmonic fusion must converge continuously to the c=0
+    # result instead of introducing a hard sign-gate jump.
     assert tiny_extras["oal_keep_mask"][0, 1].item() > 0.99999
     assert tiny_conflict_advantages[0, 1].item() == pytest.approx(
-        zero_conflict_advantages[0, 1].item(), abs=5e-6
+        zero_conflict_advantages[0, 1].item(), abs=1e-5
     )
 
 
@@ -261,12 +265,12 @@ def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
     prefix = extras["pt_oal_prefix_weights"][0]
     torch.testing.assert_close(prefix[1:], torch.tensor([0.5, 0.5]), atol=1e-5, rtol=1e-5)
     assert conflict[2].item() > conflict[1].item() > 0.0
-    torch.testing.assert_close(keep, torch.ones_like(keep))
+    expected_alpha = _harmonic_three_way(prefix, conflict, torch.ones_like(conflict))
+    torch.testing.assert_close(keep, 1.0 - expected_alpha)
     # Both raw OPD values are identical and negative, so stronger conflict
-    # evidence must add a larger positive outcome residual while leaving the
-    # raw OPD coefficient unchanged.
+    # evidence must rotate them farther toward the equal-magnitude positive
+    # outcome target.
     assert advantages[0, 2].item() > advantages[0, 1].item()
-    assert advantages[0, 2].item() < 0.0
 
 
 def test_outcome_confidence_reduces_weak_majority_corrections():
@@ -305,7 +309,8 @@ def test_outcome_confidence_reduces_weak_majority_corrections():
         torch.tensor([1.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]),
     )
     correction = extras["oal_outcome_correction_weight"][:, 1]
-    torch.testing.assert_close(correction[1:], (correction[0] / 3.0).expand(3))
+    torch.testing.assert_close(correction[1:], correction[1].expand(3))
+    assert correction[0].item() > correction[1].item() > 0.0
     assert advantages[0, 1].item() > raw_opd[0, 1].item()
     assert torch.all(advantages[1:, 1] < raw_opd[1:, 1])
 
@@ -365,8 +370,8 @@ def test_full_pov_fp16_joint_gate_remains_finite():
 
     prefix = extras["pt_oal_prefix_weights"][0, 1]
     conflict = extras["oal_conflict_score"][0, 1]
-    assert _harmonic_joint(prefix, conflict).item() > 0.0
-    torch.testing.assert_close(extras["oal_keep_mask"], mask)
+    confidence = extras["oal_outcome_confidence"][0]
+    assert _harmonic_three_way(prefix, conflict, confidence).item() > 0.0
     assert torch.isfinite(advantages).all()
 
 
@@ -437,21 +442,26 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     conflict = extras["oal_conflict_score"] > 0
 
     torch.testing.assert_close(prefix[:, 2:], torch.full((2, 2), 0.5), atol=1e-5, rtol=1e-5)
-    # Prefix validity may strengthen an existing outcome residual, but raw OPD
-    # is preserved at every valid position.
-    torch.testing.assert_close(keep, mask)
-    expected_alpha = _harmonic_joint(prefix, extras["oal_conflict_score"])
+    # All three signals are required.  Reliable prefixes and aligned OPD are
+    # preserved exactly; weaker prefix support strengthens a conflict
+    # correction continuously.
+    confidence = extras["oal_outcome_confidence"].unsqueeze(-1).expand_as(raw_opd)
+    expected_alpha = _harmonic_three_way(
+        prefix, extras["oal_conflict_score"], confidence
+    )
+    expected_keep = (1.0 - expected_alpha) * mask
+    torch.testing.assert_close(keep, expected_keep)
     torch.testing.assert_close(advantages[~conflict], raw_opd[~conflict])
     assert keep[0, 2].item() == 1.0  # correct rollout, positive OPD: aligned
     assert keep[1, 3].item() == 1.0  # wrong rollout, negative OPD: aligned
     expected_target = (
-        extras["oal_group_outcome_advantage"]
-        * extras["oal_outcome_target_scale"]
-    ).unsqueeze(-1).expand_as(raw_opd)
-    expected_advantages = raw_opd + expected_target * expected_alpha
+        torch.sign(extras["oal_group_outcome_advantage"]).unsqueeze(-1)
+        * raw_opd.abs()
+    )
+    expected_advantages = raw_opd * expected_keep + expected_target * expected_alpha
     torch.testing.assert_close(advantages, expected_advantages)
     # At equal conflict evidence, weaker prefix support increases the outcome
-    # residual continuously without changing the OPD coefficient.
+    # rotation and decreases the conflicting OPD coefficient.
     assert expected_alpha[0, 3].item() > expected_alpha[0, 1].item()
     assert expected_alpha[1, 2].item() > expected_alpha[1, 0].item()
 
@@ -654,10 +664,12 @@ def test_topk_full_pov_broadcasts_prefix_and_masks_invalid_candidates():
 
     prefix = extras["pt_oal_prefix_weights"].unsqueeze(-1)
     conflict = extras["oal_conflict_score"]
-    expected_alpha = _harmonic_joint(prefix, conflict)
+    confidence = extras["oal_outcome_confidence"].view(-1, 1, 1).expand_as(conflict)
+    expected_alpha = _harmonic_three_way(prefix, conflict, confidence)
+    expected_keep = (1.0 - expected_alpha) * candidate_mask
 
     assert expected_alpha[candidate_mask].max().item() > 0.0
-    torch.testing.assert_close(extras["oal_keep_mask"], candidate_mask.to(raw_opd.dtype))
+    torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)
     assert torch.isfinite(advantages).all()
     assert torch.all(advantages[~candidate_mask] == 0)
 

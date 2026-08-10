@@ -1492,16 +1492,19 @@ def compute_outcome_aligned_logit_opd_advantage(
 ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
     """Prefix-Outcome Validity interpolation for dense OPD.
 
-    Informative outcome groups correct dense OPD only when two independent
-    signals agree: the prefix is unreliable and the OPD direction conflicts
-    with the trajectory outcome.  Prefix invalidity and directional conflict
-    are combined with their harmonic conjunction, which stays on the scale of
-    its inputs instead of vanishing as their product.  A parameter-free,
-    within-group outcome confidence then prevents weak majority evidence from
-    receiving the same correction strength as a distinctive minority outcome.
-    The resulting weight continuously interpolates raw OPD toward a
-    group-centered outcome target, robustly scaled by each response's median
-    absolute OPD magnitude.
+    Informative outcome groups correct dense OPD only when three independent
+    signals agree: the outcome residual is distinctive within its rollout
+    group, the current prefix is unreliable, and the OPD direction conflicts
+    with the trajectory outcome.  The three signals are fused symmetrically by
+    their harmonic mean.  Unlike a hierarchy of pairwise gates followed by a
+    product, this stays on the scale of the weakest evidence instead of
+    collapsing quadratically when all three signals are moderate.
+
+    At a selected token, POV interpolates raw OPD toward an equal-magnitude
+    target whose sign is fixed by the group-centered outcome.  This makes the
+    correction invariant to the very different OPD reward scales observed
+    across student/teacher sizes while retaining the dense token-level OPD
+    magnitude.
 
     The construction adds no tunable mixing coefficient.  A fully reliable
     prefix, zero directional conflict, or a homogeneous outcome group recovers
@@ -1615,9 +1618,8 @@ def compute_outcome_aligned_logit_opd_advantage(
 
         outcome_target_scale = _oal_response_median_abs_scale(dense_advantages, valid_mask)
         informative_outcome = group_outcome_advantage != 0
-        outcome_target = (
-            group_outcome_advantage * outcome_target_scale
-        ).view(*outcome_view_shape) * valid_mask
+        outcome_direction_view = torch.sign(group_outcome_advantage).view(*outcome_view_shape)
+        outcome_target = outcome_direction_view * dense_advantages.abs() * valid_mask
 
         positive_outcome = group_outcome_advantage.view(*outcome_view_shape) > 0
         negative_outcome = group_outcome_advantage.view(*outcome_view_shape) < 0
@@ -1684,49 +1686,44 @@ def compute_outcome_aligned_logit_opd_advantage(
 
         if oal_cfg["outcome_validation_enabled"]:
             # A response-level outcome is too coarse to correct token-level
-            # OPD by itself.  Require prefix invalidity at the same position.
-            # The harmonic conjunction is a parameter-free fuzzy AND:
+            # OPD by itself.  Require all three pieces of evidence at the same
+            # position: group-relative outcome confidence q, prefix invalidity
+            # d = 1 - p, and directional conflict c.  Their three-way harmonic
+            # conjunction is the parameter-free fuzzy AND
             #
-            #              2 (1 - p) c
-            #     alpha = -----------------,
-            #              (1 - p) + c
+            #                         3 q d c
+            #     alpha = ---------------------------------,
+            #              q d + q c + d c
             #
-            # It is zero if either signal is absent, bounded by one, and does
-            # not suffer the scale collapse of the raw product (1-p)c.  The
-            # group-relative outcome confidence q then gives
-            #
-            #                  2 (1 - p) c
-            #     alpha = q * -----------------,
-            #                  (1 - p) + c
-            #
-            # so weak outcome residuals cannot overrule dense OPD as strongly
-            # as the most distinctive outcome in the same rollout group.
+            # with alpha = 0 when any input is zero.  This symmetric fusion is
+            # continuous, bounded by one, and avoids the scale collapse of the
+            # previous nested form q * H(d, c).
             prefix_invalidity = (1.0 - prefix_weight_view).clamp(0.0, 1.0)
-            conjunction_denominator = prefix_invalidity + conflict_score
-            joint_invalidity = torch.where(
-                conjunction_denominator > 0,
-                2.0 * prefix_invalidity * conflict_score / conjunction_denominator,
-                torch.zeros_like(conjunction_denominator),
-            ) * valid_mask
             outcome_confidence_view = outcome_confidence.view(*outcome_view_shape)
-            outcome_correction_weight = joint_invalidity * outcome_confidence_view * valid_mask
-            # Preserve the dense OPD gradient exactly and use the independently
-            # validated outcome only as a gated residual.  Replacing an alpha
-            # fraction of raw OPD weakens the teacher signal precisely at the
-            # detected conflict positions; that is especially harmful for a
-            # strong student, even when alpha is small.  Residual correction
-            # keeps the OPD baseline as an exact backbone and introduces no
-            # additional mixing hyperparameter.
-            opd_interpolation_weight = valid_mask
+            conjunction_denominator = (
+                outcome_confidence_view * prefix_invalidity
+                + outcome_confidence_view * conflict_score
+                + prefix_invalidity * conflict_score
+            )
+            outcome_correction_weight = torch.where(
+                conjunction_denominator > 0,
+                3.0
+                * outcome_confidence_view
+                * prefix_invalidity
+                * conflict_score
+                / conjunction_denominator,
+                torch.zeros_like(conjunction_denominator),
+            ).clamp(0.0, 1.0) * valid_mask
+            opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
         else:
             # Prefix-only ablation intentionally applies prefix validity to
             # every valid OPD position because no outcome gate is available.
             opd_interpolation_weight = outcome_weights * prefix_weight_view
 
-        # Full POV adds a scale-matched outcome residual only at jointly
-        # invalid-and-conflicting positions.  The raw OPD term is never
-        # attenuated.  The prefix-only ablation retains its historical
-        # positional reweighting for a clean component comparison.
+        # Full POV rotates only jointly supported conflict positions from raw
+        # OPD toward an equal-magnitude, outcome-consistent target.  The
+        # prefix-only ablation retains its historical positional reweighting
+        # for a clean component comparison.
         if oal_cfg["outcome_validation_enabled"]:
             preliminary_advantages = (
                 dense_advantages * opd_interpolation_weight
