@@ -22,18 +22,9 @@ def _pov_config(*, outcome=True, prefix=True, window_size=2):
     }
 
 
-def _harmonic_three_way(prefix, conflict, outcome_confidence):
+def _weakest_evidence_three_way(prefix, conflict, outcome_confidence):
     invalidity = 1.0 - prefix
-    denominator = (
-        outcome_confidence * invalidity
-        + outcome_confidence * conflict
-        + invalidity * conflict
-    )
-    return torch.where(
-        denominator > 0,
-        3.0 * outcome_confidence * invalidity * conflict / denominator,
-        torch.zeros_like(denominator),
-    )
+    return torch.minimum(torch.minimum(outcome_confidence, invalidity), conflict)
 
 
 def test_group_centered_outcome_advantage_is_parameter_free():
@@ -219,7 +210,7 @@ def test_full_pov_is_continuous_as_conflict_approaches_zero():
     assert zero_extras["oal_conflict_score"][0, 1].item() == 0.0
     assert tiny_extras["oal_conflict_score"][0, 1].item() > 0.0
     assert tiny_extras["pt_oal_prefix_weights"][0, 1].item() == pytest.approx(0.5, abs=1e-5)
-    # The three-way harmonic fusion must converge continuously to the c=0
+    # The weakest-evidence fusion must converge continuously to the c=0
     # result instead of introducing a hard sign-gate jump.
     assert tiny_extras["oal_keep_mask"][0, 1].item() > 0.99999
     assert tiny_conflict_advantages[0, 1].item() == pytest.approx(
@@ -265,7 +256,7 @@ def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
     prefix = extras["pt_oal_prefix_weights"][0]
     torch.testing.assert_close(prefix[1:], torch.tensor([0.5, 0.5]), atol=1e-5, rtol=1e-5)
     assert conflict[2].item() > conflict[1].item() > 0.0
-    expected_alpha = _harmonic_three_way(prefix, conflict, torch.ones_like(conflict))
+    expected_alpha = _weakest_evidence_three_way(prefix, conflict, torch.ones_like(conflict))
     torch.testing.assert_close(keep, 1.0 - expected_alpha)
     # Both raw OPD values are identical and negative, so stronger conflict
     # evidence must rotate them farther toward the equal-magnitude positive
@@ -371,7 +362,7 @@ def test_full_pov_fp16_joint_gate_remains_finite():
     prefix = extras["pt_oal_prefix_weights"][0, 1]
     conflict = extras["oal_conflict_score"][0, 1]
     confidence = extras["oal_outcome_confidence"][0]
-    assert _harmonic_three_way(prefix, conflict, confidence).item() > 0.0
+    assert _weakest_evidence_three_way(prefix, conflict, confidence).item() > 0.0
     assert torch.isfinite(advantages).all()
 
 
@@ -446,7 +437,7 @@ def test_full_pov_applies_prefix_only_to_outcome_conflicts():
     # preserved exactly; weaker prefix support strengthens a conflict
     # correction continuously.
     confidence = extras["oal_outcome_confidence"].unsqueeze(-1).expand_as(raw_opd)
-    expected_alpha = _harmonic_three_way(
+    expected_alpha = _weakest_evidence_three_way(
         prefix, extras["oal_conflict_score"], confidence
     )
     expected_keep = (1.0 - expected_alpha) * mask
@@ -665,7 +656,7 @@ def test_topk_full_pov_broadcasts_prefix_and_masks_invalid_candidates():
     prefix = extras["pt_oal_prefix_weights"].unsqueeze(-1)
     conflict = extras["oal_conflict_score"]
     confidence = extras["oal_outcome_confidence"].view(-1, 1, 1).expand_as(conflict)
-    expected_alpha = _harmonic_three_way(prefix, conflict, confidence)
+    expected_alpha = _weakest_evidence_three_way(prefix, conflict, confidence)
     expected_keep = (1.0 - expected_alpha) * candidate_mask
 
     assert expected_alpha[candidate_mask].max().item() > 0.0

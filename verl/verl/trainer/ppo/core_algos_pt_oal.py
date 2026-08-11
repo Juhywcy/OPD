@@ -1495,10 +1495,11 @@ def compute_outcome_aligned_logit_opd_advantage(
     Informative outcome groups correct dense OPD only when three independent
     signals agree: the outcome residual is distinctive within its rollout
     group, the current prefix is unreliable, and the OPD direction conflicts
-    with the trajectory outcome.  The three signals are fused symmetrically by
-    their harmonic mean.  Unlike a hierarchy of pairwise gates followed by a
-    product, this stays on the scale of the weakest evidence instead of
-    collapsing quadratically when all three signals are moderate.
+    with the trajectory outcome.  The correction strength is the minimum of
+    those three normalized signals.  This parameter-free fuzzy AND is bounded
+    by the weakest evidence: it is more conservative than a harmonic fusion,
+    but unlike a product it does not collapse quadratically when all three
+    signals are moderate.
 
     At a selected token, POV interpolates raw OPD toward an equal-magnitude
     target whose sign is fixed by the group-centered outcome.  This makes the
@@ -1688,31 +1689,20 @@ def compute_outcome_aligned_logit_opd_advantage(
             # A response-level outcome is too coarse to correct token-level
             # OPD by itself.  Require all three pieces of evidence at the same
             # position: group-relative outcome confidence q, prefix invalidity
-            # d = 1 - p, and directional conflict c.  Their three-way harmonic
-            # conjunction is the parameter-free fuzzy AND
+            # d = 1 - p, and directional conflict c.  Use the weakest-evidence
+            # conjunction
             #
-            #                         3 q d c
-            #     alpha = ---------------------------------,
-            #              q d + q c + d c
+            #                 alpha = min(q, d, c).
             #
-            # with alpha = 0 when any input is zero.  This symmetric fusion is
-            # continuous, bounded by one, and avoids the scale collapse of the
-            # previous nested form q * H(d, c).
+            # It introduces no mixing coefficient, is exactly zero when any
+            # signal is absent, cannot exceed any constituent evidence, and
+            # avoids both the over-correction of a harmonic fusion and the
+            # scale collapse of the previous nested form q * H(d, c).
             prefix_invalidity = (1.0 - prefix_weight_view).clamp(0.0, 1.0)
             outcome_confidence_view = outcome_confidence.view(*outcome_view_shape)
-            conjunction_denominator = (
-                outcome_confidence_view * prefix_invalidity
-                + outcome_confidence_view * conflict_score
-                + prefix_invalidity * conflict_score
-            )
-            outcome_correction_weight = torch.where(
-                conjunction_denominator > 0,
-                3.0
-                * outcome_confidence_view
-                * prefix_invalidity
-                * conflict_score
-                / conjunction_denominator,
-                torch.zeros_like(conjunction_denominator),
+            outcome_correction_weight = torch.minimum(
+                torch.minimum(outcome_confidence_view, prefix_invalidity),
+                conflict_score,
             ).clamp(0.0, 1.0) * valid_mask
             opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
         else:
