@@ -1266,6 +1266,26 @@ def _oal_get_config(config):
     if outcome_validation_enabled is None:
         # Backward compatibility for the old prefix-only ablation.
         outcome_validation_enabled = str(_config_get(raw, "split_mode", "oal")) != "all"
+    fusion_mode = str(_config_get(raw, "fusion_mode", "weakest_evidence")).strip().lower()
+    fusion_aliases = {
+        "weakest": "weakest_evidence",
+        "min": "weakest_evidence",
+        "atten": "conflict_attenuation",
+        "attenuation": "conflict_attenuation",
+        "conflictgate": "conflict_interpolation",
+        "interpolation": "conflict_interpolation",
+    }
+    fusion_mode = fusion_aliases.get(fusion_mode, fusion_mode)
+    valid_fusion_modes = {
+        "weakest_evidence",
+        "conflict_attenuation",
+        "conflict_interpolation",
+    }
+    if fusion_mode not in valid_fusion_modes:
+        raise ValueError(
+            "POV fusion_mode must be one of "
+            f"{sorted(valid_fusion_modes)}, got {fusion_mode!r}."
+        )
     return {
         "enabled": bool(_config_get(raw, "enabled", True)),
         # Compatibility-only: token_reward_direct uses this for diagnostics.
@@ -1274,6 +1294,7 @@ def _oal_get_config(config):
         "outcome_validation_enabled": bool(outcome_validation_enabled),
         "prefix_trust_enabled": bool(_config_get(raw, "prefix_trust_enabled", True)),
         "prefix_window_size": max(1, int(_config_get(raw, "prefix_window_size", 128))),
+        "fusion_mode": fusion_mode,
     }
 
 
@@ -1595,19 +1616,22 @@ def compute_outcome_aligned_logit_opd_advantage(
             raise ValueError("POV received non-finite logit_delta_scores on valid positions.")
 
         normalized_delta = _oal_normalized_logit_delta(align_scores, valid_mask)
+        fusion_mode = oal_cfg["fusion_mode"]
         if oal_cfg["outcome_validation_enabled"]:
             group_outcome_advantage = _oal_group_centered_outcome_advantage(outcome_scores, index)
             outcome_confidence = _oal_group_relative_outcome_confidence(
                 group_outcome_advantage, index
             )
-            # The centered outcome magnitude belongs in the outcome target,
-            # not in conflict detection.  Multiplying it into the conflict
-            # score as well makes the correction depend quadratically on
-            # group accuracy and nearly disables it for moderately mixed
-            # groups.  Directional alignment is sufficient to decide whether
-            # OPD points against the independently observed outcome.
-            outcome_direction = torch.sign(group_outcome_advantage).view(*outcome_view_shape)
-            outcome_alignment = outcome_direction * normalized_delta
+            if fusion_mode == "weakest_evidence":
+                # The current scale-free method uses only the outcome sign for
+                # conflict detection and reserves group-relative magnitude for
+                # the separate confidence signal below.
+                outcome_direction = torch.sign(group_outcome_advantage).view(*outcome_view_shape)
+                outcome_alignment = outcome_direction * normalized_delta
+            else:
+                # Reproduce the two 1.5B-positive variants exactly: their
+                # conflict evidence used the centered outcome residual itself.
+                outcome_alignment = group_outcome_advantage.view(*outcome_view_shape) * normalized_delta
             conflict_score = torch.relu(-outcome_alignment) * valid_mask
             outcome_weights = valid_mask / (1.0 + conflict_score)
         else:
@@ -1619,8 +1643,17 @@ def compute_outcome_aligned_logit_opd_advantage(
 
         outcome_target_scale = _oal_response_median_abs_scale(dense_advantages, valid_mask)
         informative_outcome = group_outcome_advantage != 0
-        outcome_direction_view = torch.sign(group_outcome_advantage).view(*outcome_view_shape)
-        outcome_target = outcome_direction_view * dense_advantages.abs() * valid_mask
+        if fusion_mode == "conflict_interpolation":
+            # Historical conflict-gated interpolation: one robust OPD scale
+            # per response, multiplied by the centered outcome residual.
+            outcome_target = (
+                group_outcome_advantage.view(*outcome_view_shape)
+                * outcome_target_scale.view(*outcome_view_shape)
+                * valid_mask
+            )
+        else:
+            outcome_direction_view = torch.sign(group_outcome_advantage).view(*outcome_view_shape)
+            outcome_target = outcome_direction_view * dense_advantages.abs() * valid_mask
 
         positive_outcome = group_outcome_advantage.view(*outcome_view_shape) > 0
         negative_outcome = group_outcome_advantage.view(*outcome_view_shape) < 0
@@ -1685,7 +1718,7 @@ def compute_outcome_aligned_logit_opd_advantage(
         else:
             prefix_weight_view = prefix_weights
 
-        if oal_cfg["outcome_validation_enabled"]:
+        if oal_cfg["outcome_validation_enabled"] and fusion_mode == "weakest_evidence":
             # A response-level outcome is too coarse to correct token-level
             # OPD by itself.  Require all three pieces of evidence at the same
             # position: group-relative outcome confidence q, prefix invalidity
@@ -1705,6 +1738,32 @@ def compute_outcome_aligned_logit_opd_advantage(
                 conflict_score,
             ).clamp(0.0, 1.0) * valid_mask
             opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
+        elif oal_cfg["outcome_validation_enabled"] and fusion_mode == "conflict_attenuation":
+            # Exact no-renormalization attenuation used by the strongest 1.5B
+            # run.  It never flips a token direction; prefix support p controls
+            # how much directional conflict c is removed: alpha = c / (p+c).
+            fusion_denominator = prefix_weight_view + conflict_score
+            safe_fusion_denominator = torch.where(
+                fusion_denominator > 0,
+                fusion_denominator,
+                torch.ones_like(fusion_denominator),
+            )
+            outcome_correction_weight = (
+                conflict_score / safe_fusion_denominator
+            ).clamp(0.0, 1.0) * valid_mask
+            opd_interpolation_weight = (1.0 - outcome_correction_weight) * valid_mask
+        elif oal_cfg["outcome_validation_enabled"]:
+            # Exact zero-threshold conflict-gated interpolation used by the
+            # other 1.5B-positive run.  Aligned positions remain raw OPD;
+            # conflict positions blend with the scale-matched outcome target.
+            combined_validity_weight = outcome_weights * prefix_weight_view
+            outcome_conflict = conflict_score > 0
+            opd_interpolation_weight = torch.where(
+                outcome_conflict,
+                combined_validity_weight,
+                valid_mask,
+            )
+            outcome_correction_weight = (valid_mask - opd_interpolation_weight).clamp(0.0, 1.0)
         else:
             # Prefix-only ablation intentionally applies prefix validity to
             # every valid OPD position because no outcome gate is available.
@@ -1714,7 +1773,9 @@ def compute_outcome_aligned_logit_opd_advantage(
         # OPD toward an equal-magnitude, outcome-consistent target.  The
         # prefix-only ablation retains its historical positional reweighting
         # for a clean component comparison.
-        if oal_cfg["outcome_validation_enabled"]:
+        if oal_cfg["outcome_validation_enabled"] and fusion_mode == "conflict_attenuation":
+            preliminary_advantages = dense_advantages * opd_interpolation_weight
+        elif oal_cfg["outcome_validation_enabled"]:
             preliminary_advantages = (
                 dense_advantages * opd_interpolation_weight
                 + outcome_target * outcome_correction_weight

@@ -2,9 +2,9 @@
 
 set -x
 cd "$(dirname "$0")/../.."
-export TORCH_CUDA_ARCH_LIST="8.0"
+export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.0}"
 export RAY_memory_usage_threshold=0.99
-export CUDA_LAUNCH_BLOCKING=1
+export CUDA_LAUNCH_BLOCKING=${CUDA_LAUNCH_BLOCKING:-1}
 # export CUDA_VISIBLE_DEVICES=1,2,3,4
 export PYTHONUNBUFFERED=1
 export PROJECT_NAME=${PROJECT_NAME:-PrefixTrustOALOPD}
@@ -22,10 +22,10 @@ export ADV_ESTIMATOR=${ADV_ESTIMATOR:-prefix_trust_oal_opd}
 
 
 # DeepMath-103K
-export MAX_PROMPT_LENGTH=1024
+export MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-1024}
 export MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-8192}  # TODO: 31744 /15360 / 7168 / 3072 / 5120
-export MAX_VAL_RESP_LENGTH=15360 # TODO: 15360 / 7168 / 3072
-export MAX_MODEL_LEN=$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))
+export MAX_VAL_RESP_LENGTH=${MAX_VAL_RESP_LENGTH:-15360} # TODO: 15360 / 7168 / 3072
+export MAX_MODEL_LEN=${MAX_MODEL_LEN:-$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))}
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
 export TEACHER_TEMPERATURE=${TEACHER_TEMPERATURE:-1.0} # Teacher logits temperature (default 1.0, no scaling)
@@ -39,6 +39,7 @@ export OAL_ENABLED=${OAL_ENABLED:-True}
 export PT_OAL_OUTCOME_VALIDATION_ENABLED=${PT_OAL_OUTCOME_VALIDATION_ENABLED:-True}
 export PT_OAL_PREFIX_TRUST_ENABLED=${PT_OAL_PREFIX_TRUST_ENABLED:-True}
 export PT_OAL_WINDOW_SIZE=${PT_OAL_WINDOW_SIZE:-128}
+export PT_OAL_FUSION_MODE=${PT_OAL_FUSION_MODE:-weakest_evidence}
 # export LR=${LR:-1e-6}
 # export LR_SCHEDULER=${LR_SCHEDULER:-constant}
 export USE_KL=${USE_KL:-False} # TODO: True / False (default False)
@@ -49,6 +50,20 @@ export LOSS_AGG_MODE=${LOSS_AGG_MODE:-"token-mean"} # TODO: "token-mean" / "seq-
 # Leave unset for the original full-dataset schedule.  Set explicitly for
 # short, matched diagnostic runs (for example, TOTAL_TRAINING_STEPS=40).
 export TOTAL_TRAINING_STEPS=${TOTAL_TRAINING_STEPS:-}
+export N_GPUS_PER_NODE=${N_GPUS_PER_NODE:-8}
+export PARALLEL_SIZE=${PARALLEL_SIZE:-1}
+export ACTOR_MICRO_BATCH_SIZE_PER_GPU=${ACTOR_MICRO_BATCH_SIZE_PER_GPU:-2}
+export REF_LOG_PROB_MICRO_BATCH_SIZE_PER_GPU=${REF_LOG_PROB_MICRO_BATCH_SIZE_PER_GPU:-2}
+export REWARD_MICRO_BATCH_SIZE_PER_GPU=${REWARD_MICRO_BATCH_SIZE_PER_GPU:-24}
+export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.75}
+export ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD:-False}
+export ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD:-False}
+export REWARD_PARAM_OFFLOAD=${REWARD_PARAM_OFFLOAD:-False}
+export TRAINER_VAL_BEFORE_TRAIN=${TRAINER_VAL_BEFORE_TRAIN:-True}
+export TRAINER_LOGGER=${TRAINER_LOGGER:-"['console','swanlab']"}
+export DATA_SEED=${DATA_SEED:-42}
+export SAVE_FREQ=${SAVE_FREQ:-20}
+export TEST_FREQ=${TEST_FREQ:-20}
 
 # TODO: qwen3_0p6b / qwen3_1p7b_base / qwen3_1p7b / llama31_8b_base / llama31_8b_inst / qwen3_8b_base / qwen3_8b / qwen25_1p5b_base / qwen25_1p5b_inst / qwen25_7b_base / qwen25_7b_inst / qwen25_math_7b_base / qwen25_math_7b_inst / qwen25_math_1p5b_base / qwen25_math_1p5b_inst / distill_r1_1p5b / olmo2_1124_7b_base / olmo2_1124_7b_sft / olmo2_1124_7b_inst / llama32_3b_inst
 # export EXPERIMENT_NAME=grpo_${TASK}_llama31_tulu3_8b_sft_8k-T_${TEMPERATURE}-n_${N_RESPONSES}-kl_${USE_KL}-mbs_${MINI_BATCH_SIZE}-${REWARD_TYPE}-$(date +%Y-%m-%d_%H-%M-%S)
@@ -112,12 +127,11 @@ export ACTOR_MODEL_NAME=$(basename "$ACTOR_MODEL_PATH")
 export REWARD_MODEL_PATH=${REWARD_MODEL_PATH:-/root/models/hbx/JustRL-DeepSeek-1.5B}
 export REWARD_MODEL_NAME=$(basename "$REWARD_MODEL_PATH")
 
-export PROJECT_PATH=checkpoint
-export PARALLEL_SIZE=1
+export PROJECT_PATH=${PROJECT_PATH:-checkpoint}
 if [ "$ADV_ESTIMATOR" = "token_reward_direct" ]; then
     DEFAULT_RUN_NAME=OPD_sampled_token-renorm${OPD_TOPK_RENORMALIZE}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 else
-    DEFAULT_RUN_NAME=pov_interp-out${PT_OAL_OUTCOME_VALIDATION_ENABLED}-pre${PT_OAL_PREFIX_TRUST_ENABLED}-w${PT_OAL_WINDOW_SIZE}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
+    DEFAULT_RUN_NAME=pov_${PT_OAL_FUSION_MODE}-out${PT_OAL_OUTCOME_VALIDATION_ENABLED}-pre${PT_OAL_PREFIX_TRUST_ENABLED}-w${PT_OAL_WINDOW_SIZE}-${MODEL_DTYPE}_stu_${ACTOR_MODEL_NAME}-tch_${REWARD_MODEL_NAME}
 fi
 export RUN_NAME=${RUN_NAME:-$DEFAULT_RUN_NAME}
 export CKPT_PATH=${PROJECT_PATH}/${RUN_NAME}
@@ -173,8 +187,10 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     +algorithm.pt_oal.outcome_validation_enabled=$PT_OAL_OUTCOME_VALIDATION_ENABLED \
     +algorithm.pt_oal.prefix_trust_enabled=$PT_OAL_PREFIX_TRUST_ENABLED \
     +algorithm.pt_oal.prefix_window_size=$PT_OAL_WINDOW_SIZE \
+    +algorithm.pt_oal.fusion_mode=$PT_OAL_FUSION_MODE \
     +algorithm.pt_oal.topk_renormalize=$OPD_TOPK_RENORMALIZE \
     data.shuffle=False \
+    data.seed=$DATA_SEED \
     data.train_files="$TRAIN_DATASET" \
     data.val_files="$TEST_DATASET" \
     data.train_batch_size=$((${MINI_BATCH_SIZE})) \
@@ -191,13 +207,13 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     $LR_ARGS \
     actor_rollout_ref.actor.ppo_mini_batch_size=$MINI_BATCH_SIZE \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=$ACTOR_MICRO_BATCH_SIZE_PER_GPU \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=$PPO_MAX_TOKEN_LEN_PER_GPU \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size=$PARALLEL_SIZE \
     $KL_ARGS \
     actor_rollout_ref.actor.loss_agg_mode=$LOSS_AGG_MODE \
-    actor_rollout_ref.actor.fsdp_config.param_offload=False \
-    actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
+    actor_rollout_ref.actor.fsdp_config.param_offload=$ACTOR_PARAM_OFFLOAD \
+    actor_rollout_ref.actor.fsdp_config.optimizer_offload=$ACTOR_OPTIMIZER_OFFLOAD \
     actor_rollout_ref.actor.fsdp_config.forward_prefetch=True \
     actor_rollout_ref.actor.fsdp_config.model_dtype=$MODEL_DTYPE \
     actor_rollout_ref.rollout.max_num_batched_tokens=$PPO_MAX_TOKEN_LEN_PER_GPU \
@@ -212,7 +228,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     +actor_rollout_ref.rollout.reward_weight_mode=$REWARD_WEIGHT_MODE \
     +actor_rollout_ref.rollout.teacher_temperature=$TEACHER_TEMPERATURE \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$PARALLEL_SIZE \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=$GPU_MEMORY_UTILIZATION \
     actor_rollout_ref.rollout.max_model_len=$MAX_MODEL_LEN \
     actor_rollout_ref.rollout.n=$N_RESPONSES \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
@@ -222,27 +238,27 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.95 \
     actor_rollout_ref.rollout.repetition_penalty=$REPETITION_PENALTY \
     actor_rollout_ref.rollout.calculate_log_probs=True \
-    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
+    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=$REF_LOG_PROB_MICRO_BATCH_SIZE_PER_GPU \
     reward_model.enable=True \
     +reward_model.reward_kwargs.enable_format_reward=$ENABLE_FORMAT_REWARD \
     reward_model.model.path=$REWARD_MODEL_PATH \
     reward_model.model.input_tokenizer=null \
     reward_model.model.use_remove_padding=True \
-    reward_model.model.fsdp_config.param_offload=False \
+    reward_model.model.fsdp_config.param_offload=$REWARD_PARAM_OFFLOAD \
     +reward_model.model.dtype=$MODEL_DTYPE \
-    reward_model.micro_batch_size_per_gpu=24 \
+    reward_model.micro_batch_size_per_gpu=$REWARD_MICRO_BATCH_SIZE_PER_GPU \
     custom_reward_function.path="verl/verl/utils/reward_score/ttrl_math/__init__.py" \
     custom_reward_function.name=reward_func \
-    trainer.val_before_train=True \
+    trainer.val_before_train=$TRAINER_VAL_BEFORE_TRAIN \
     trainer.log_val_generations=2 \
-    trainer.logger=['console','swanlab'] \
+    trainer.logger=$TRAINER_LOGGER \
     trainer.project_name=$PROJECT_NAME \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.validation_data_dir=validation_log/$EXPERIMENT_NAME \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=$N_GPUS_PER_NODE \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
-    trainer.test_freq=20 \
+    trainer.save_freq=$SAVE_FREQ \
+    trainer.test_freq=$TEST_FREQ \
     trainer.total_epochs=1 \
     trainer.default_local_dir="$CKPT_PATH" \
     trainer.is_plot=$IS_PLOT \

@@ -11,13 +11,14 @@ from verl.trainer.ppo.core_algos_pt_oal import (
 )
 
 
-def _pov_config(*, outcome=True, prefix=True, window_size=2):
+def _pov_config(*, outcome=True, prefix=True, window_size=2, fusion_mode="weakest_evidence"):
     return {
         "pt_oal": {
             "enabled": True,
             "outcome_validation_enabled": outcome,
             "prefix_trust_enabled": prefix,
             "prefix_window_size": window_size,
+            "fusion_mode": fusion_mode,
         }
     }
 
@@ -231,6 +232,70 @@ def test_full_pov_with_unit_prefix_falls_back_to_raw_opd():
 
     torch.testing.assert_close(extras["oal_keep_mask"], torch.ones_like(raw_opd))
     torch.testing.assert_close(advantages, raw_opd)
+
+
+def test_conflict_attenuation_reproduces_parameter_free_keep_rule():
+    raw_opd = torch.tensor([[1.0, -1.0], [1.0, -1.0]])
+    mask = torch.ones_like(raw_opd)
+    teacher_log_probs = torch.tensor([[0.0, -0.69314718056]]).expand_as(raw_opd)
+
+    advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
+        token_level_rewards=raw_opd,
+        response_mask=mask,
+        config=_pov_config(window_size=1, fusion_mode="conflict_attenuation"),
+        index=np.array(["prompt", "prompt"], dtype=object),
+        true_reward_score=torch.tensor([1.0, 0.0]),
+        teacher_sampled_log_probs=teacher_log_probs,
+        teacher_entropy=torch.zeros_like(raw_opd),
+        logit_delta_scores=raw_opd,
+    )
+
+    prefix = extras["pt_oal_prefix_weights"]
+    conflict = extras["oal_conflict_score"]
+    expected_keep = 1.0 - conflict / (prefix + conflict).clamp_min(1e-12)
+    torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)
+    torch.testing.assert_close(advantages, raw_opd * expected_keep)
+    # The historical attenuation mode cannot flip a raw OPD sign.
+    assert torch.all(advantages * raw_opd >= 0)
+
+
+def test_conflict_interpolation_reproduces_historical_zero_threshold_gate():
+    raw_opd = torch.tensor([[1.0, -1.0], [1.0, -1.0]])
+    mask = torch.ones_like(raw_opd)
+    teacher_log_probs = torch.tensor([[0.0, -0.69314718056]]).expand_as(raw_opd)
+
+    advantages, _, extras = compute_outcome_aligned_logit_opd_advantage(
+        token_level_rewards=raw_opd,
+        response_mask=mask,
+        config=_pov_config(window_size=1, fusion_mode="conflict_interpolation"),
+        index=np.array(["prompt", "prompt"], dtype=object),
+        true_reward_score=torch.tensor([1.0, 0.0]),
+        teacher_sampled_log_probs=teacher_log_probs,
+        teacher_entropy=torch.zeros_like(raw_opd),
+        logit_delta_scores=raw_opd,
+    )
+
+    conflict = extras["oal_conflict_score"]
+    prefix = extras["pt_oal_prefix_weights"]
+    expected_keep = torch.where(
+        conflict > 0,
+        prefix / (1.0 + conflict),
+        torch.ones_like(prefix),
+    )
+    expected = expected_keep * raw_opd + (1.0 - expected_keep) * extras["oal_outcome_target"]
+    torch.testing.assert_close(extras["oal_keep_mask"], expected_keep)
+    torch.testing.assert_close(advantages, expected)
+
+
+def test_unknown_fusion_mode_fails_fast():
+    with pytest.raises(ValueError, match="fusion_mode"):
+        compute_outcome_aligned_logit_opd_advantage(
+            token_level_rewards=torch.ones(2, 2),
+            response_mask=torch.ones(2, 2),
+            config=_pov_config(prefix=False, fusion_mode="unknown"),
+            index=np.array(["prompt", "prompt"], dtype=object),
+            true_reward_score=torch.tensor([1.0, 0.0]),
+        )
 
 
 def test_full_pov_outcome_correction_is_monotone_in_conflict_evidence():
