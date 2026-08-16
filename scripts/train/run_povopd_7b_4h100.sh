@@ -53,6 +53,10 @@ export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.45}
 export ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD:-False}
 export ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD:-True}
 export REWARD_PARAM_OFFLOAD=${REWARD_PARAM_OFFLOAD:-False}
+# Validation uses 16 samples per problem with responses up to 31,744 tokens.
+# Some data-parallel ranks can therefore finish generation more than ten
+# minutes apart; extend only the collective timeout, not the generation setup.
+export ACTOR_ROLLOUT_REF_NCCL_TIMEOUT=${ACTOR_ROLLOUT_REF_NCCL_TIMEOUT:-7200}
 
 export PT_OAL_OUTCOME_VALIDATION_ENABLED=${PT_OAL_OUTCOME_VALIDATION_ENABLED:-True}
 export PT_OAL_PREFIX_TRUST_ENABLED=${PT_OAL_PREFIX_TRUST_ENABLED:-True}

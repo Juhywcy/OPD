@@ -59,6 +59,10 @@ export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.75}
 export ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD:-False}
 export ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD:-False}
 export REWARD_PARAM_OFFLOAD=${REWARD_PARAM_OFFLOAD:-False}
+# Process-group timeout used by actor/rollout workers.  Long validation
+# generations can leave faster ranks waiting at the timing all-gather for
+# more than the upstream 10-minute default.
+export ACTOR_ROLLOUT_REF_NCCL_TIMEOUT=${ACTOR_ROLLOUT_REF_NCCL_TIMEOUT:-600}
 export TRAINER_VAL_BEFORE_TRAIN=${TRAINER_VAL_BEFORE_TRAIN:-True}
 export TRAINER_LOGGER=${TRAINER_LOGGER:-"['console','swanlab']"}
 export DATA_SEED=${DATA_SEED:-42}
@@ -203,6 +207,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.model.enable_activation_offload=True \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
+    actor_rollout_ref.nccl_timeout=$ACTOR_ROLLOUT_REF_NCCL_TIMEOUT \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     $LR_ARGS \
     actor_rollout_ref.actor.ppo_mini_batch_size=$MINI_BATCH_SIZE \
