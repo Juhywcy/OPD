@@ -4,11 +4,17 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-# Matched 1.5B -> Skywork-7B POVOPD run for one node with eight B200 GPUs.
+# Matched 1.5B -> Skywork-7B POVOPD run for one node with eight H100/B200 GPUs.
 # Algorithmic settings follow run_prefix_trust_oal_opd.sh; only resource
-# settings are specialized for the B200 worker.
+# settings are specialized for the eight-GPU worker.
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
-export TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST:-10.0}
+if [[ -z "${TORCH_CUDA_ARCH_LIST:-}" ]]; then
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
+    case "$GPU_NAME" in
+        *B200*) export TORCH_CUDA_ARCH_LIST=10.0 ;;
+        *H100*) export TORCH_CUDA_ARCH_LIST=9.0 ;;
+    esac
+fi
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-8}
 
 export N_GPUS_PER_NODE=${N_GPUS_PER_NODE:-8}
@@ -55,7 +61,7 @@ export TRAINER_LOGGER=${TRAINER_LOGGER:-"['console','swanlab']"}
 export SAVE_FREQ=${SAVE_FREQ:-20}
 export TEST_FREQ=${TEST_FREQ:-20}
 export PROJECT_PATH=${PROJECT_PATH:-/opt/tiger/checkpoint}
-export RUN_NAME=${RUN_NAME:-POVOPD_conflict_attenuation_fp32_1p5B_Skywork7B_8B200_seed42_full1epoch}
+export RUN_NAME=${RUN_NAME:-POVOPD_conflict_attenuation_fp32_1p5B_Skywork7B_8GPU_seed42_full1epoch}
 
 # Empty means use trainer.total_epochs=1 over the complete dataset.  A positive
 # override remains available for short diagnostics.

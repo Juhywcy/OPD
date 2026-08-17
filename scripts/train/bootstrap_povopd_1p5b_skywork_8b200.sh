@@ -15,10 +15,12 @@ PID_FILE=${PID_FILE:-/opt/tiger/povopd_1p5b_skywork7b.pid}
 
 mkdir -p "$ACTOR_DIR" "$TEACHER_DIR"
 
-# The stock image ships a CUDA 12.6 PyTorch wheel whose kernels stop at sm_90.
-# B200 is sm_100, so keep the same torch release expected by vLLM while using
-# the official CUDA 12.8 build that contains native Blackwell kernels.
-if ! python3 -c 'import sys, torch; sys.exit(0 if "sm_100" in torch.cuda.get_arch_list() else 1)'; then
+# The stock image's CUDA 12.6 PyTorch wheel supports H100 directly.  B200 is
+# sm_100 and needs the CUDA 12.8 wheel, so only replace PyTorch on Blackwell
+# workers; this keeps H100 startup fast and avoids an unnecessary reinstall.
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
+if [[ "$GPU_NAME" == *B200* ]] && \
+    ! python3 -c 'import sys, torch; sys.exit(0 if "sm_100" in torch.cuda.get_arch_list() else 1)'; then
     python3 -m pip install --user --force-reinstall \
         torch==2.7.1 \
         --index-url https://download.pytorch.org/whl/cu128
