@@ -29,6 +29,7 @@ fi
 python3 -m pip install --user \
     transformers==4.55.4 \
     swanlab \
+    matplotlib \
     latex2sympy2_extended \
     math_verify
 
