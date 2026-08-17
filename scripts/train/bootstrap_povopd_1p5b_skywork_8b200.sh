@@ -17,7 +17,11 @@ mkdir -p "$ACTOR_DIR" "$TEACHER_DIR"
 
 # The base Merlin image currently installs transformers 5.x, while this VERL
 # snapshot requires the 4.x AutoModel compatibility aliases.
-python3 -m pip install --user transformers==4.55.4 swanlab
+python3 -m pip install --user \
+    transformers==4.55.4 \
+    swanlab \
+    latex2sympy2_extended \
+    math_verify
 
 download_file() {
     local repo=$1
