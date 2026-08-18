@@ -61,6 +61,9 @@ export TRAINER_VAL_BEFORE_TRAIN=${TRAINER_VAL_BEFORE_TRAIN:-False}
 export TRAINER_LOGGER=${TRAINER_LOGGER:-"['console','swanlab']"}
 export SAVE_FREQ=${SAVE_FREQ:-20}
 export TEST_FREQ=${TEST_FREQ:-20}
+# Metrics are still computed and logged; only the very large decoded
+# validation JSONL files are disabled for quota-constrained Merlin workers.
+export DUMP_VALIDATION_GENERATIONS=${DUMP_VALIDATION_GENERATIONS:-False}
 export PROJECT_PATH=${PROJECT_PATH:-/opt/tiger/checkpoint}
 export RUN_NAME=${RUN_NAME:-POVOPD_conflict_attenuation_fp32_1p5B_Skywork7B_8GPU_seed42_full1epoch}
 

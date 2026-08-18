@@ -68,6 +68,10 @@ export TRAINER_LOGGER=${TRAINER_LOGGER:-"['console','swanlab']"}
 export DATA_SEED=${DATA_SEED:-42}
 export SAVE_FREQ=${SAVE_FREQ:-20}
 export TEST_FREQ=${TEST_FREQ:-20}
+# Full validation generations can be hundreds of MB per checkpoint.  Keep the
+# historical default, but allow storage-constrained runs to retain metrics
+# without writing the decoded samples to disk.
+export DUMP_VALIDATION_GENERATIONS=${DUMP_VALIDATION_GENERATIONS:-True}
 
 # TODO: qwen3_0p6b / qwen3_1p7b_base / qwen3_1p7b / llama31_8b_base / llama31_8b_inst / qwen3_8b_base / qwen3_8b / qwen25_1p5b_base / qwen25_1p5b_inst / qwen25_7b_base / qwen25_7b_inst / qwen25_math_7b_base / qwen25_math_7b_inst / qwen25_math_1p5b_base / qwen25_math_1p5b_inst / distill_r1_1p5b / olmo2_1124_7b_base / olmo2_1124_7b_sft / olmo2_1124_7b_inst / llama32_3b_inst
 # export EXPERIMENT_NAME=grpo_${TASK}_llama31_tulu3_8b_sft_8k-T_${TEMPERATURE}-n_${N_RESPONSES}-kl_${USE_KL}-mbs_${MINI_BATCH_SIZE}-${REWARD_TYPE}-$(date +%Y-%m-%d_%H-%M-%S)
@@ -145,7 +149,7 @@ export NCCL_DEBUG=WARN
 # export VLLM_ATTENTION_BACKEND=XFORMERS
 # export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
-export SWANLAB_LOG_DIR=${CKPT_PATH}/swanlab_log
+export SWANLAB_LOG_DIR=${SWANLAB_LOG_DIR:-${CKPT_PATH}/swanlab_log}
 export HYDRA_FULL_ERROR=1
 
 
@@ -180,7 +184,20 @@ echo "PPO_MAX_TOKEN_LEN_PER_GPU: $PPO_MAX_TOKEN_LEN_PER_GPU"
 
 mkdir -p "$CKPT_PATH"
 mkdir -p "$SWANLAB_LOG_DIR"
-mkdir -p "validation_log/$EXPERIMENT_NAME"
+VALIDATION_DATA_ARGS=()
+case "${DUMP_VALIDATION_GENERATIONS,,}" in
+    true|1|yes)
+        mkdir -p "validation_log/$EXPERIMENT_NAME"
+        VALIDATION_DATA_ARGS+=("trainer.validation_data_dir=validation_log/$EXPERIMENT_NAME")
+        ;;
+    false|0|no)
+        VALIDATION_DATA_ARGS+=("trainer.validation_data_dir=null")
+        ;;
+    *)
+        echo "DUMP_VALIDATION_GENERATIONS must be true or false, got: $DUMP_VALIDATION_GENERATIONS" >&2
+        exit 2
+        ;;
+esac
 
 
 
@@ -259,7 +276,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     trainer.logger=$TRAINER_LOGGER \
     trainer.project_name=$PROJECT_NAME \
     trainer.experiment_name=$EXPERIMENT_NAME \
-    trainer.validation_data_dir=validation_log/$EXPERIMENT_NAME \
+    "${VALIDATION_DATA_ARGS[@]}" \
     trainer.n_gpus_per_node=$N_GPUS_PER_NODE \
     trainer.nnodes=1 \
     trainer.save_freq=$SAVE_FREQ \
