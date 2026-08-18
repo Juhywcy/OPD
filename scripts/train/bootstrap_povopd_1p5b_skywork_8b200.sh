@@ -4,7 +4,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-: "${SWANLAB_API_KEY:?SWANLAB_API_KEY must be set in the environment}"
+SWANLAB_MODE=${SWANLAB_MODE:-cloud}
+if [[ "$SWANLAB_MODE" != "offline" ]]; then
+    : "${SWANLAB_API_KEY:?SWANLAB_API_KEY must be set unless SWANLAB_MODE=offline}"
+fi
+export SWANLAB_MODE
 
 MODEL_ROOT=${MODEL_ROOT:-/opt/tiger/models}
 ACTOR_DIR=${ACTOR_MODEL_PATH:-$MODEL_ROOT/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B}
