@@ -18,7 +18,8 @@ mkdir -p "$ACTOR_DIR" "$TEACHER_DIR"
 # The stock image's CUDA 12.6 PyTorch wheel supports H100 directly.  B200 is
 # sm_100 and needs the CUDA 12.8 wheel, so only replace PyTorch on Blackwell
 # workers; this keeps H100 startup fast and avoids an unnecessary reinstall.
-GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
+GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader)
+GPU_NAME=${GPU_NAME%%$'\n'*}
 if [[ "$GPU_NAME" == *B200* ]] && \
     ! python3 -c 'import sys, torch; sys.exit(0 if "sm_100" in torch.cuda.get_arch_list() else 1)'; then
     python3 -m pip install --user --force-reinstall \

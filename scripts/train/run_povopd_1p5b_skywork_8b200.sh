@@ -9,7 +9,8 @@ cd "$(dirname "$0")/../.."
 # settings are specialized for the eight-GPU worker.
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}
 if [[ -z "${TORCH_CUDA_ARCH_LIST:-}" ]]; then
-    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader)
+    GPU_NAME=${GPU_NAME%%$'\n'*}
     case "$GPU_NAME" in
         *B200*) export TORCH_CUDA_ARCH_LIST=10.0 ;;
         *H100*) export TORCH_CUDA_ARCH_LIST=9.0 ;;
