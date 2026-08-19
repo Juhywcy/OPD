@@ -9,6 +9,13 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
 cd "${REPO_ROOT}"
 
+# Optional isolated runtime for Qwen3.5-capable vLLM wheels. A pip --target
+# directory is sufficient because every Ray worker inherits PYTHONPATH.
+if [[ -n "${QWEN35_DEPS:-}" ]]; then
+    export PYTHONPATH="${QWEN35_DEPS}${PYTHONPATH:+:${PYTHONPATH}}"
+    export PATH="${QWEN35_DEPS}/bin:${PATH}"
+fi
+
 AU_PLANNING_ROOT=${AU_PLANNING_ROOT:-/mnt/bn/search-tiktok-nas-au/zhanghaoxin.2025/planning}
 export ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-${AU_PLANNING_ROOT}/dataset/Qwen3.5-2B}
 export REWARD_MODEL_PATH=${REWARD_MODEL_PATH:-${AU_PLANNING_ROOT}/dataset/Qwen3.5-9B}
