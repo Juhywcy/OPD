@@ -1720,7 +1720,13 @@ class RewardModelWorker(Worker, DistProfilerExtension):
     def _build_model(self, config):
         # the following line is necessary
         from torch.distributed.fsdp import CPUOffload
-        from transformers import AutoConfig, AutoModelForCausalLM
+        from transformers import (
+            AutoConfig,
+            AutoModel,
+            AutoModelForCausalLM,
+            AutoModelForImageTextToText,
+            AutoModelForVision2Seq,
+        )
 
         use_shm = config.model.get("use_shm", False)
         # download the checkpoint from hdfs
@@ -1753,7 +1759,24 @@ class RewardModelWorker(Worker, DistProfilerExtension):
             warnings.simplefilter("ignore")
             model_config.classifier_dropout = 0.0
             model_config.hidden_dropout = "0"
-            reward_module = AutoModelForCausalLM.from_pretrained(
+
+            # OPD uses a generative teacher to score the student's sampled
+            # tokens.  Newer checkpoints such as Qwen3.5 expose a multimodal
+            # conditional-generation config even for text-only batches, so
+            # forcing AutoModelForCausalLM rejects an otherwise valid model.
+            # Select the same compatible HF auto class used by the actor
+            # loader; the forward path below still consumes ordinary text
+            # input_ids and reads the returned logits.
+            if type(model_config) in AutoModelForImageTextToText._model_mapping.keys():
+                reward_module_class = AutoModelForImageTextToText
+            elif type(model_config) in AutoModelForCausalLM._model_mapping.keys():
+                reward_module_class = AutoModelForCausalLM
+            elif type(model_config) in AutoModelForVision2Seq._model_mapping.keys():
+                reward_module_class = AutoModelForVision2Seq
+            else:
+                reward_module_class = AutoModel
+
+            reward_module = reward_module_class.from_pretrained(
                 pretrained_model_name_or_path=local_path,
                 config=model_config,
                 torch_dtype=model_dtype,

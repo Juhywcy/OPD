@@ -28,6 +28,7 @@ export MAX_VAL_RESP_LENGTH=${MAX_VAL_RESP_LENGTH:-15360} # TODO: 15360 / 7168 / 
 export MAX_MODEL_LEN=${MAX_MODEL_LEN:-$(( MAX_RESP_LENGTH + MAX_PROMPT_LENGTH > MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ? MAX_RESP_LENGTH + MAX_PROMPT_LENGTH : MAX_VAL_RESP_LENGTH + MAX_PROMPT_LENGTH ))}
 export MINI_BATCH_SIZE=${MINI_BATCH_SIZE:-64} # TODO: 1 / 8 / 16 / 32 / 64 (default 64)
 export TEMPERATURE=${TEMPERATURE:-1.0} # TODO: 0.6 / 0.8 / 1.0 / 1.2 (default 1.0)
+export TOP_P=${TOP_P:-1.0}
 export TEACHER_TEMPERATURE=${TEACHER_TEMPERATURE:-1.0} # Teacher logits temperature (default 1.0, no scaling)
 export REPETITION_PENALTY=${REPETITION_PENALTY:-1.0} # TODO: 1.0 / 1.1 / 1.2 (default 1.0, no penalty)
 export N_RESPONSES=${N_RESPONSES:-4} # TODO: 4 / 8 / 16 / 32 (default: 4)
@@ -72,6 +73,10 @@ export TEST_FREQ=${TEST_FREQ:-20}
 # historical default, but allow storage-constrained runs to retain metrics
 # without writing the decoded samples to disk.
 export DUMP_VALIDATION_GENERATIONS=${DUMP_VALIDATION_GENERATIONS:-True}
+export USE_REMOVE_PADDING=${USE_REMOVE_PADDING:-True}
+export REWARD_USE_REMOVE_PADDING=${REWARD_USE_REMOVE_PADDING:-$USE_REMOVE_PADDING}
+export CUSTOM_REWARD_FUNCTION_PATH=${CUSTOM_REWARD_FUNCTION_PATH:-verl/verl/utils/reward_score/ttrl_math/__init__.py}
+export CUSTOM_REWARD_FUNCTION_NAME=${CUSTOM_REWARD_FUNCTION_NAME:-reward_func}
 
 # TODO: qwen3_0p6b / qwen3_1p7b_base / qwen3_1p7b / llama31_8b_base / llama31_8b_inst / qwen3_8b_base / qwen3_8b / qwen25_1p5b_base / qwen25_1p5b_inst / qwen25_7b_base / qwen25_7b_inst / qwen25_math_7b_base / qwen25_math_7b_inst / qwen25_math_1p5b_base / qwen25_math_1p5b_inst / distill_r1_1p5b / olmo2_1124_7b_base / olmo2_1124_7b_sft / olmo2_1124_7b_inst / llama32_3b_inst
 # export EXPERIMENT_NAME=grpo_${TASK}_llama31_tulu3_8b_sft_8k-T_${TEMPERATURE}-n_${N_RESPONSES}-kl_${USE_KL}-mbs_${MINI_BATCH_SIZE}-${REWARD_TYPE}-$(date +%Y-%m-%d_%H-%M-%S)
@@ -199,6 +204,11 @@ case "${DUMP_VALIDATION_GENERATIONS,,}" in
         ;;
 esac
 
+CHAT_TEMPLATE_ARGS=()
+if [ -n "${ENABLE_THINKING:-}" ]; then
+    CHAT_TEMPLATE_ARGS+=("+data.apply_chat_template_kwargs.enable_thinking=${ENABLE_THINKING}")
+fi
+
 
 
 python3 -m verl.trainer.main_ppo_pt_oal \
@@ -220,8 +230,9 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
+    "${CHAT_TEMPLATE_ARGS[@]}" \
     actor_rollout_ref.model.path=$ACTOR_MODEL_PATH \
-    actor_rollout_ref.model.use_remove_padding=True \
+    actor_rollout_ref.model.use_remove_padding=$USE_REMOVE_PADDING \
     actor_rollout_ref.model.enable_activation_offload=True \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.nccl_timeout=$ACTOR_ROLLOUT_REF_NCCL_TIMEOUT \
@@ -244,6 +255,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=True \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.temperature=$TEMPERATURE \
+    actor_rollout_ref.rollout.top_p=$TOP_P \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True \
     +actor_rollout_ref.rollout.log_prob_top_k=$LOG_PROB_TOP_K \
     +actor_rollout_ref.rollout.top_k_strategy=$TOP_K_STRATEGY \
@@ -265,12 +277,12 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     +reward_model.reward_kwargs.enable_format_reward=$ENABLE_FORMAT_REWARD \
     reward_model.model.path=$REWARD_MODEL_PATH \
     reward_model.model.input_tokenizer=null \
-    reward_model.model.use_remove_padding=True \
+    reward_model.model.use_remove_padding=$REWARD_USE_REMOVE_PADDING \
     reward_model.model.fsdp_config.param_offload=$REWARD_PARAM_OFFLOAD \
     +reward_model.model.dtype=$MODEL_DTYPE \
     reward_model.micro_batch_size_per_gpu=$REWARD_MICRO_BATCH_SIZE_PER_GPU \
-    custom_reward_function.path="verl/verl/utils/reward_score/ttrl_math/__init__.py" \
-    custom_reward_function.name=reward_func \
+    custom_reward_function.path="$CUSTOM_REWARD_FUNCTION_PATH" \
+    custom_reward_function.name=$CUSTOM_REWARD_FUNCTION_NAME \
     trainer.val_before_train=$TRAINER_VAL_BEFORE_TRAIN \
     trainer.log_val_generations=2 \
     trainer.logger=$TRAINER_LOGGER \
