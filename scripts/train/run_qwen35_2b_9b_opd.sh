@@ -12,7 +12,8 @@ cd "${REPO_ROOT}"
 # Optional isolated runtime for Qwen3.5-capable vLLM wheels. A pip --target
 # directory is sufficient because every Ray worker inherits PYTHONPATH.
 if [[ -n "${QWEN35_DEPS:-}" ]]; then
-    export PYTHONPATH="${QWEN35_DEPS}${PYTHONPATH:+:${PYTHONPATH}}"
+    QWEN35_RUNTIME_SHIM="${REPO_ROOT}/verl/recipe/repro/qwen35_runtime"
+    export PYTHONPATH="${QWEN35_RUNTIME_SHIM}:${QWEN35_DEPS}${PYTHONPATH:+:${PYTHONPATH}}"
     export PATH="${QWEN35_DEPS}/bin:${PATH}"
 fi
 
