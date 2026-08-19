@@ -24,3 +24,16 @@ def _qwen35_find_spec(name: str, *args: Any, **kwargs: Any) -> ModuleSpec | None
 
 
 importlib.util.find_spec = _qwen35_find_spec
+
+
+# Transformers 5.x renamed the generic vision-language auto class.  verl
+# still imports the 4.x spelling in several shared modules, so expose the new
+# class under the old name for this isolated Qwen3.5 runtime only.
+try:
+    import transformers
+
+    if not hasattr(transformers, "AutoModelForVision2Seq"):
+        transformers.AutoModelForVision2Seq = transformers.AutoModelForImageTextToText
+except (ImportError, AttributeError):
+    # Let the normal import site report a useful error if neither API exists.
+    pass
