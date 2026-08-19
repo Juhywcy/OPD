@@ -344,9 +344,14 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             print(f"Model config after override: {actor_model_config}")
 
         # NOTE(fix me): tie_word_embedding causes meta_tensor init to hang
-        init_context = get_init_weight_context_manager(
-            use_meta_tensor=not actor_model_config.tie_word_embeddings, mesh=self.device_mesh
+        # The base training image carries Accelerate 1.9, whose meta-init hook
+        # is incompatible with Transformers 5 parameters carrying
+        # ``_is_hf_initialized``.  Qwen3.5 fits comfortably in host memory on
+        # the target H100 nodes, so initialize it on CPU before FSDP sharding.
+        use_meta_tensor = (
+            not actor_model_config.tie_word_embeddings and actor_model_config.model_type != "qwen3_5"
         )
+        init_context = get_init_weight_context_manager(use_meta_tensor=use_meta_tensor, mesh=self.device_mesh)
 
         with init_context(), warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -1747,9 +1752,8 @@ class RewardModelWorker(Worker, DistProfilerExtension):
         model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code)
 
         # note that we have to create model in fp32. Otherwise, the optimizer is in bf16, which is incorrect
-        init_context = get_init_weight_context_manager(
-            use_meta_tensor=not model_config.tie_word_embeddings, mesh=self.device_mesh
-        )
+        use_meta_tensor = not model_config.tie_word_embeddings and model_config.model_type != "qwen3_5"
+        init_context = get_init_weight_context_manager(use_meta_tensor=use_meta_tensor, mesh=self.device_mesh)
 
         # get dtype from config, default to bf16 for backward compatibility
         from verl.utils.torch_dtypes import PrecisionType
