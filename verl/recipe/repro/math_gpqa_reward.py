@@ -95,22 +95,18 @@ def _normalize_reward_result(result: Any, solution_str: Any) -> dict[str, Any]:
     both free-response math and GPQA.
     """
 
+    del solution_str
+
     if isinstance(result, dict):
         score = float(result.get("score", 0.0))
         acc = float(result.get("acc", score > 0.0))
-        pred = result.get("pred", "")
-        format_score = result.get("format_score", r"\boxed" in str(solution_str))
     else:
         score = float(result)
         acc = float(score > 0.0)
-        pred = ""
-        format_score = float(r"\boxed" in str(solution_str))
 
     return {
         "score": score,
         "acc": acc,
-        "format_score": float(format_score),
-        "pred": "" if pred is None else str(pred),
     }
 
 

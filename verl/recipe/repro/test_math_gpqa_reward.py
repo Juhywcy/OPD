@@ -24,7 +24,7 @@ class MathGpqaRewardRouterTest(unittest.TestCase):
             result = reward_func("GPQA", r"\\boxed{B}", "B")
         self.assertEqual(
             result,
-            {"score": 1.0, "acc": 1.0, "format_score": 1.0, "pred": "B"},
+            {"score": 1.0, "acc": 1.0},
         )
         get_gpqa.return_value.assert_called_once()
 
@@ -34,7 +34,7 @@ class MathGpqaRewardRouterTest(unittest.TestCase):
             result = reward_func("AIME24", "answer", "25")
         self.assertEqual(
             result,
-            {"score": 0.0, "acc": 0.0, "format_score": 0.0, "pred": "24"},
+            {"score": 0.0, "acc": 0.0},
         )
         get_math.return_value.assert_called_once()
 
