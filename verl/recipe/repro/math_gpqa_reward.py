@@ -86,6 +86,34 @@ def _gpqa_reward() -> Callable[..., Any]:
     return module.reward_func
 
 
+def _normalize_reward_result(result: Any, solution_str: Any) -> dict[str, Any]:
+    """Return the same metric schema for every validation dataset.
+
+    verl concatenates reward metadata across all validation loaders before it
+    groups samples by dataset.  Dataset-specific keys therefore create ragged
+    columns and fail validation.  Keep only fields that can be populated for
+    both free-response math and GPQA.
+    """
+
+    if isinstance(result, dict):
+        score = float(result.get("score", 0.0))
+        acc = float(result.get("acc", score > 0.0))
+        pred = result.get("pred", "")
+        format_score = result.get("format_score", r"\boxed" in str(solution_str))
+    else:
+        score = float(result)
+        acc = float(score > 0.0)
+        pred = ""
+        format_score = float(r"\boxed" in str(solution_str))
+
+    return {
+        "score": score,
+        "acc": acc,
+        "format_score": float(format_score),
+        "pred": "" if pred is None else str(pred),
+    }
+
+
 def reward_func(
     data_source: Any,
     solution_str: Any,
@@ -96,13 +124,14 @@ def reward_func(
     """Score one rollout with the verifier appropriate to its dataset."""
 
     scorer = _gpqa_reward() if is_gpqa_source(data_source) else _math_reward()
-    return scorer(
+    result = scorer(
         data_source=data_source,
         solution_str=solution_str,
         ground_truth=ground_truth,
         extra_info=extra_info,
         **kwargs,
     )
+    return _normalize_reward_result(result, solution_str)
 
 
 __all__ = ["is_gpqa_source", "reward_func"]

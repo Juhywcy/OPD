@@ -20,16 +20,22 @@ class MathGpqaRewardRouterTest(unittest.TestCase):
 
     def test_routes_gpqa(self):
         with patch("math_gpqa_reward._gpqa_reward") as get_gpqa:
-            get_gpqa.return_value.return_value = {"score": 1.0}
-            result = reward_func("GPQA", "answer", "B")
-        self.assertEqual(result, {"score": 1.0})
+            get_gpqa.return_value.return_value = {"score": 1.0, "acc": True, "pred": "B"}
+            result = reward_func("GPQA", r"\\boxed{B}", "B")
+        self.assertEqual(
+            result,
+            {"score": 1.0, "acc": 1.0, "format_score": 1.0, "pred": "B"},
+        )
         get_gpqa.return_value.assert_called_once()
 
     def test_routes_math(self):
         with patch("math_gpqa_reward._math_reward") as get_math:
-            get_math.return_value.return_value = {"score": 0.0}
+            get_math.return_value.return_value = {"score": 0.0, "acc": False, "pred": "24"}
             result = reward_func("AIME24", "answer", "25")
-        self.assertEqual(result, {"score": 0.0})
+        self.assertEqual(
+            result,
+            {"score": 0.0, "acc": 0.0, "format_score": 0.0, "pred": "24"},
+        )
         get_math.return_value.assert_called_once()
 
     def test_fallback_accepts_last_boxed_answer(self):
