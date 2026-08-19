@@ -51,6 +51,9 @@ export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.60}
 export MODEL_DTYPE=${MODEL_DTYPE:-bfloat16}
 export USE_REMOVE_PADDING=${USE_REMOVE_PADDING:-False}
 export REWARD_USE_REMOVE_PADDING=${REWARD_USE_REMOVE_PADDING:-False}
+# The 2B actor comfortably fits on 8xH100.  Disabling activation offload avoids
+# an incompatibility between verl's legacy saved-tensor hook and PyTorch 2.10.
+export ACTOR_ACTIVATION_OFFLOAD=${ACTOR_ACTIVATION_OFFLOAD:-False}
 
 export MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-1024}
 export MAX_RESP_LENGTH=${MAX_RESP_LENGTH:-8192}

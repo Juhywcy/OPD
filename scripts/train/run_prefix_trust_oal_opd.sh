@@ -60,6 +60,7 @@ export GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.75}
 export ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD:-False}
 export ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD:-False}
 export REWARD_PARAM_OFFLOAD=${REWARD_PARAM_OFFLOAD:-False}
+export ACTOR_ACTIVATION_OFFLOAD=${ACTOR_ACTIVATION_OFFLOAD:-True}
 # Process-group timeout used by actor/rollout workers.  Long validation
 # generations can leave faster ranks waiting at the timing all-gather for
 # more than the upstream 10-minute default.
@@ -240,7 +241,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     actor_rollout_ref.model.path=$ACTOR_MODEL_PATH \
     "${MODEL_ATTN_ARGS[@]}" \
     actor_rollout_ref.model.use_remove_padding=$USE_REMOVE_PADDING \
-    actor_rollout_ref.model.enable_activation_offload=True \
+    actor_rollout_ref.model.enable_activation_offload=$ACTOR_ACTIVATION_OFFLOAD \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.nccl_timeout=$ACTOR_ROLLOUT_REF_NCCL_TIMEOUT \
     actor_rollout_ref.actor.optim.lr=1e-6 \
