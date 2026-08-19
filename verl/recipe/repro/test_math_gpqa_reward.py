@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from math_gpqa_reward import is_gpqa_source, reward_func
+from math_gpqa_reward import _fallback_math_reward, is_gpqa_source, reward_func
 
 
 class MathGpqaRewardRouterTest(unittest.TestCase):
@@ -31,6 +31,27 @@ class MathGpqaRewardRouterTest(unittest.TestCase):
             result = reward_func("AIME24", "answer", "25")
         self.assertEqual(result, {"score": 0.0})
         get_math.return_value.assert_called_once()
+
+    def test_fallback_accepts_last_boxed_answer(self):
+        result = _fallback_math_reward("AIME24", r"Therefore, \\boxed{25}.", "25")
+        self.assertEqual(result["score"], 1.0)
+        self.assertTrue(result["acc"])
+        self.assertEqual(result["pred"], "25")
+
+    def test_fallback_uses_the_last_box(self):
+        result = _fallback_math_reward("AIME24", r"First \\boxed{24}, finally \\boxed{25}.", "25")
+        self.assertEqual(result["score"], 1.0)
+        self.assertEqual(result["pred"], "25")
+
+    def test_fallback_rejects_wrong_box_even_if_answer_line_is_correct(self):
+        result = _fallback_math_reward("AIME24", "Answer: 25\n" + r"Finally, \\boxed{24}.", "25")
+        self.assertEqual(result["score"], 0.0)
+        self.assertFalse(result["acc"])
+
+    def test_fallback_supports_unboxed_answer_line(self):
+        result = _fallback_math_reward("MATH", "Reasoning\nAnswer: 25", "25")
+        self.assertEqual(result["score"], 1.0)
+        self.assertTrue(result["acc"])
 
 
 if __name__ == "__main__":

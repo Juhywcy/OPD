@@ -18,6 +18,50 @@ def is_gpqa_source(data_source: Any) -> bool:
     return "gpqa" in str(data_source).strip().lower()
 
 
+def _fallback_math_reward(
+    data_source: Any,
+    solution_str: Any,
+    ground_truth: Any,
+    extra_info: Any = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Score math answers without optional symbolic-LaTeX dependencies.
+
+    The training prompts request a final ``\\boxed{...}`` answer, so an
+    available final box is authoritative.  The Minerva-style ``Answer:``
+    parser is retained for datasets or generations that do not use boxes.
+    """
+
+    del data_source, extra_info, kwargs
+
+    from verl.utils.reward_score.math_dapo import compute_score as dapo_compute_score
+    from verl.utils.reward_score.math_reward import (
+        compute_score as boxed_compute_score,
+        last_boxed_only_string,
+        remove_boxed,
+    )
+
+    solution = str(solution_str)
+    truth = str(ground_truth)
+    boxed_truth = last_boxed_only_string(truth)
+    if boxed_truth is not None:
+        truth = remove_boxed(boxed_truth)
+
+    boxed_prediction = last_boxed_only_string(solution)
+    if boxed_prediction is not None:
+        correct = bool(boxed_compute_score(solution, truth))
+        return {
+            "score": float(correct),
+            "acc": correct,
+            "pred": remove_boxed(boxed_prediction),
+        }
+
+    result = dapo_compute_score(solution, truth)
+    correct = bool(result.get("acc", False))
+    result["score"] = float(correct)
+    return result
+
+
 def _math_reward() -> Callable[..., Any]:
     try:
         from verl.utils.reward_score.ttrl_math import reward_func
@@ -27,23 +71,9 @@ def _math_reward() -> Callable[..., Any]:
         if exc.name != "latex2sympy2_extended":
             raise
 
-    # Keep Raw OPD runnable on lean training images.  This verifier uses the
-    # same last-answer/boxed normalization without symbolic LaTeX parsing.
-    from verl.utils.reward_score.math_dapo import compute_score
-
-    def reward_func(
-        data_source: Any,
-        solution_str: Any,
-        ground_truth: Any,
-        extra_info: Any = None,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        del data_source, extra_info, kwargs
-        result = compute_score(str(solution_str), str(ground_truth))
-        result["score"] = 1.0 if result.get("acc", False) else 0.0
-        return result
-
-    return reward_func
+    # Keep Raw OPD runnable on lean training images without changing the
+    # answer format expected by the original verifier.
+    return _fallback_math_reward
 
 
 def _gpqa_reward() -> Callable[..., Any]:
