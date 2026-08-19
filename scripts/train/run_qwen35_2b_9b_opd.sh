@@ -9,6 +9,10 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
 cd "${REPO_ROOT}"
 
+# Make the in-tree ``verl`` package importable even when the launcher starts
+# from another directory (for example through Merlin/SDP).
+export PYTHONPATH="${REPO_ROOT}/verl${PYTHONPATH:+:${PYTHONPATH}}"
+
 # Optional isolated runtime for Qwen3.5-capable vLLM wheels. A pip --target
 # directory is sufficient because every Ray worker inherits PYTHONPATH.
 if [[ -n "${QWEN35_DEPS:-}" ]]; then
