@@ -288,10 +288,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             AutoModel,
             AutoModelForCausalLM,
             AutoModelForImageTextToText,
-            AutoModelForVision2Seq,
         )
 
         from verl.utils.model import get_generation_config, print_model_size, update_model_config
+        from verl.utils.transformers_compat import AutoModelForVision2Seq
         from verl.utils.torch_dtypes import PrecisionType
 
         assert role in ["actor", "ref"]
@@ -1725,8 +1725,9 @@ class RewardModelWorker(Worker, DistProfilerExtension):
             AutoModel,
             AutoModelForCausalLM,
             AutoModelForImageTextToText,
-            AutoModelForVision2Seq,
         )
+
+        from verl.utils.transformers_compat import AutoModelForVision2Seq
 
         use_shm = config.model.get("use_shm", False)
         # download the checkpoint from hdfs

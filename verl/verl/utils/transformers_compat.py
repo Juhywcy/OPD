@@ -36,6 +36,14 @@ except ImportError:
         return False
 
 
+# Transformers 5.x renamed the generic vision-language auto class.  Keep the
+# old spelling available to verl call sites that also support Transformers 4.x.
+try:
+    from transformers import AutoModelForVision2Seq
+except ImportError:
+    from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
+
+
 @lru_cache
 def is_transformers_version_in_range(min_version: Optional[str] = None, max_version: Optional[str] = None) -> bool:
     try:
