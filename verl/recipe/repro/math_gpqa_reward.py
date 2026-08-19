@@ -19,7 +19,29 @@ def is_gpqa_source(data_source: Any) -> bool:
 
 
 def _math_reward() -> Callable[..., Any]:
-    from verl.utils.reward_score.ttrl_math import reward_func
+    try:
+        from verl.utils.reward_score.ttrl_math import reward_func
+
+        return reward_func
+    except ModuleNotFoundError as exc:
+        if exc.name != "latex2sympy2_extended":
+            raise
+
+    # Keep Raw OPD runnable on lean training images.  This verifier uses the
+    # same last-answer/boxed normalization without symbolic LaTeX parsing.
+    from verl.utils.reward_score.math_dapo import compute_score
+
+    def reward_func(
+        data_source: Any,
+        solution_str: Any,
+        ground_truth: Any,
+        extra_info: Any = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        del data_source, extra_info, kwargs
+        result = compute_score(str(solution_str), str(ground_truth))
+        result["score"] = 1.0 if result.get("acc", False) else 0.0
+        return result
 
     return reward_func
 
