@@ -49,6 +49,12 @@ class MathGpqaRewardRouterTest(unittest.TestCase):
         self.assertEqual(result["score"], 1.0)
         self.assertEqual(result["pred"], "25")
 
+    def test_fallback_accepts_fbox_without_crashing(self):
+        result = _fallback_math_reward("AIME24", r"Therefore, \\fbox{25}.", "25")
+        self.assertEqual(result["score"], 1.0)
+        self.assertTrue(result["acc"])
+        self.assertEqual(result["pred"], "25")
+
     def test_fallback_rejects_wrong_box_even_if_answer_line_is_correct(self):
         result = _fallback_math_reward("AIME24", "Answer: 25\n" + r"Finally, \\boxed{24}.", "25")
         self.assertEqual(result["score"], 0.0)

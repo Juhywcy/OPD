@@ -18,6 +18,18 @@ def is_gpqa_source(data_source: Any) -> bool:
     return "gpqa" in str(data_source).strip().lower()
 
 
+def _box_payload(boxed: str) -> str:
+    """Remove a supported TeX box wrapper without assertion-based parsing."""
+
+    text = str(boxed).strip()
+    for prefix in (r"\boxed{", r"\fbox{"):
+        if text.startswith(prefix) and text.endswith("}"):
+            return text[len(prefix) : -1]
+    if text.startswith(r"\boxed "):
+        return text[len(r"\boxed ") :]
+    return text
+
+
 def _fallback_math_reward(
     data_source: Any,
     solution_str: Any,
@@ -36,24 +48,24 @@ def _fallback_math_reward(
 
     from verl.utils.reward_score.math_dapo import compute_score as dapo_compute_score
     from verl.utils.reward_score.math_reward import (
-        compute_score as boxed_compute_score,
+        is_equiv,
         last_boxed_only_string,
-        remove_boxed,
     )
 
     solution = str(solution_str)
     truth = str(ground_truth)
     boxed_truth = last_boxed_only_string(truth)
     if boxed_truth is not None:
-        truth = remove_boxed(boxed_truth)
+        truth = _box_payload(boxed_truth)
 
     boxed_prediction = last_boxed_only_string(solution)
     if boxed_prediction is not None:
-        correct = bool(boxed_compute_score(solution, truth))
+        prediction = _box_payload(boxed_prediction)
+        correct = bool(is_equiv(prediction, truth))
         return {
             "score": float(correct),
             "acc": correct,
-            "pred": remove_boxed(boxed_prediction),
+            "pred": prediction,
         }
 
     result = dapo_compute_score(solution, truth)
