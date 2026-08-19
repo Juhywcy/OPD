@@ -19,7 +19,13 @@ if [[ -n "${QWEN35_DEPS:-}" ]]; then
     QWEN35_RUNTIME_SHIM="${REPO_ROOT}/verl/recipe/repro/qwen35_runtime"
     export PYTHONPATH="${QWEN35_RUNTIME_SHIM}:${QWEN35_DEPS}${PYTHONPATH:+:${PYTHONPATH}}"
     export PATH="${QWEN35_DEPS}/bin:${PATH}"
+    export VLLM_ATTENTION_BACKEND="${VLLM_ATTENTION_BACKEND:-TRITON_ATTN}"
 fi
+
+# The base image's FlashAttention extension is tied to its original PyTorch.
+# Qwen3.5's isolated runtime therefore uses PyTorch SDPA for FSDP models and
+# vLLM's Triton backend for rollout generation.
+export HF_ATTN_IMPLEMENTATION=${HF_ATTN_IMPLEMENTATION:-sdpa}
 
 AU_PLANNING_ROOT=${AU_PLANNING_ROOT:-/mnt/bn/search-tiktok-nas-au/zhanghaoxin.2025/planning}
 export ACTOR_MODEL_PATH=${ACTOR_MODEL_PATH:-${AU_PLANNING_ROOT}/dataset/Qwen3.5-2B}

@@ -209,6 +209,12 @@ if [ -n "${ENABLE_THINKING:-}" ]; then
     CHAT_TEMPLATE_ARGS+=("+data.apply_chat_template_kwargs.enable_thinking=${ENABLE_THINKING}")
 fi
 
+MODEL_ATTN_ARGS=()
+if [ -n "${HF_ATTN_IMPLEMENTATION:-}" ]; then
+    MODEL_ATTN_ARGS+=("+actor_rollout_ref.model.override_config.attn_implementation=${HF_ATTN_IMPLEMENTATION}")
+    MODEL_ATTN_ARGS+=("+reward_model.model.override_config.attn_implementation=${HF_ATTN_IMPLEMENTATION}")
+fi
+
 
 
 python3 -m verl.trainer.main_ppo_pt_oal \
@@ -232,6 +238,7 @@ python3 -m verl.trainer.main_ppo_pt_oal \
     data.return_raw_chat=True \
     "${CHAT_TEMPLATE_ARGS[@]}" \
     actor_rollout_ref.model.path=$ACTOR_MODEL_PATH \
+    "${MODEL_ATTN_ARGS[@]}" \
     actor_rollout_ref.model.use_remove_padding=$USE_REMOVE_PADDING \
     actor_rollout_ref.model.enable_activation_offload=True \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \

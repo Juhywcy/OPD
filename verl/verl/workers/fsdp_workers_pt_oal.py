@@ -1755,6 +1755,9 @@ class RewardModelWorker(Worker, DistProfilerExtension):
         from verl.utils.torch_dtypes import PrecisionType
         model_dtype_str = config.model.get("dtype", "bf16")
         model_dtype = PrecisionType.to_dtype(model_dtype_str)
+        attn_implementation = config.model.get("override_config", {}).get(
+            "attn_implementation", "flash_attention_2"
+        )
 
         with init_context(), warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -1781,7 +1784,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
                 pretrained_model_name_or_path=local_path,
                 config=model_config,
                 torch_dtype=model_dtype,
-                attn_implementation="flash_attention_2",
+                attn_implementation=attn_implementation,
                 trust_remote_code=trust_remote_code,
             )
 
