@@ -26,6 +26,7 @@ from tensordict import TensorDict
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
+from torch.utils.checkpoint import checkpoint
 from transformers import PreTrainedTokenizer
 
 from verl.utils.device import get_device_name, get_torch_device
@@ -123,13 +124,37 @@ def logprobs_from_logits_v2(logits: torch.FloatTensor, labels):
         logsumexp_values = torch.stack([torch.logsumexp(logit, dim=-1) for logit in logits])
         logprobs_labels = logits_labels - logsumexp_values  # log_softmax(x_i) = x_i - logsumexp(x)
     else:
-        # logsumexp approach is unstable with bfloat16, fall back to slightly less efficent approach
-        logprobs_labels = []
-        for row_logits, row_labels in zip(logits, labels, strict=True):  # loop to reduce peak mem consumption
-            row_logprobs = F.log_softmax(row_logits, dim=-1)
-            row_logprobs_labels = row_logprobs.gather(dim=-1, index=row_labels.unsqueeze(-1)).squeeze(-1)
-            logprobs_labels.append(row_logprobs_labels)
-        logprobs_labels = torch.stack(logprobs_labels)
+        # The logsumexp approach is unstable with bfloat16. Computing log_softmax
+        # for a complete long sequence, however, materializes a [tokens, vocab]
+        # tensor and can request more than 10 GiB for large-vocabulary models.
+        # Chunk over tokens and checkpoint each differentiable chunk so those
+        # temporary log-softmax tensors are recomputed during backward instead of
+        # being retained for the whole sequence. This is mathematically identical
+        # to the previous implementation and supports torch.autograd.grad.
+        output_shape = labels.shape
+        flat_logits = logits.reshape(-1, logits.shape[-1])
+        flat_labels = labels.reshape(-1)
+        chunk_tokens = 1024
+
+        def _chunk_logprobs(chunk_logits, chunk_labels):
+            chunk_logprobs = F.log_softmax(chunk_logits, dim=-1)
+            return chunk_logprobs.gather(dim=-1, index=chunk_labels.unsqueeze(-1)).squeeze(-1)
+
+        logprobs_chunks = []
+        for start in range(0, flat_logits.shape[0], chunk_tokens):
+            chunk_logits = flat_logits[start : start + chunk_tokens]
+            chunk_labels = flat_labels[start : start + chunk_tokens]
+            if torch.is_grad_enabled() and chunk_logits.requires_grad:
+                chunk_output = checkpoint(
+                    _chunk_logprobs,
+                    chunk_logits,
+                    chunk_labels,
+                    use_reentrant=False,
+                )
+            else:
+                chunk_output = _chunk_logprobs(chunk_logits, chunk_labels)
+            logprobs_chunks.append(chunk_output)
+        logprobs_labels = torch.cat(logprobs_chunks, dim=0).view(output_shape)
     return logprobs_labels
 
 
